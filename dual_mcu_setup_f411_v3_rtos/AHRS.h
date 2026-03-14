@@ -20,6 +20,9 @@ typedef struct {
     long encoder_ticks[4]; //encoder data
 } ahrsPacket_t;
 
+
+void printAHRSPacket(ahrsPacket_t data);
+
 class AHRS {
     public:
         AHRS(uint8_t sdaPin = SDA_PIN, uint8_t sclPin = SCL_PIN, uint32_t i2cSpeed = 400000UL);

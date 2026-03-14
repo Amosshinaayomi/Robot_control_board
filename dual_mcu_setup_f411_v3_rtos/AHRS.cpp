@@ -382,3 +382,28 @@ void AHRS::applyTemperatureCompensation(float currentTemp, float gyroScale) {
     }
 }
 
+
+
+
+
+
+
+void printAHRSPacket(ahrsPacket_t data)
+{
+    Serial.print("Time stamp: "); Serial.println(data.timestamp_ms);
+    Serial.print("Gyro (dps) X,Y,Z: ");
+    Serial.print(data.gyro_dps[0], 3); Serial.print(", ");
+    Serial.print(data.gyro_dps[1], 3); Serial.print(", ");
+    Serial.println(data.gyro_dps[2], 3);
+    Serial.print("Accel(g) X,Y,Z: ");
+    Serial.print(data.accel_g[0], 3); Serial.print(", ");
+    Serial.print(data.accel_g[1], 3); Serial.print(", ");
+    Serial.println(data.accel_g[2], 3);
+
+    Serial.print("PITCH:"); Serial.print(data.pitch);
+    Serial.print(", ROLL:"); Serial.print(data.roll);
+    Serial.print(", YAW:"); Serial.println(data.yaw); 
+
+    Serial.printf("Front Left side encoder tick is %i\nFront right side encoder tick is %i\nBack Left side encoder tick is %i\nBack right side encoder tick is %i\n",data.encoder_ticks[0], data.encoder_ticks[1], data.encoder_ticks[2], data.encoder_ticks[3]);  
+    Serial.println();    
+}
