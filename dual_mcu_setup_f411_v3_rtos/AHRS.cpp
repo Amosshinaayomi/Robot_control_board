@@ -407,3 +407,4 @@ void printAHRSPacket(ahrsPacket_t data)
     Serial.printf("Front Left side encoder tick is %i\nFront right side encoder tick is %i\nBack Left side encoder tick is %i\nBack right side encoder tick is %i\n",data.encoder_ticks[0], data.encoder_ticks[1], data.encoder_ticks[2], data.encoder_ticks[3]);  
     Serial.println();    
 }
+

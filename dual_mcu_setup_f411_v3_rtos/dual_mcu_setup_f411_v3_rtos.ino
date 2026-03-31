@@ -184,6 +184,7 @@ void printTask(void *pvParameters)
     // Serial.print("  Left ticks: "); Serial.print(localData.encoder_ticks[0] + localData.encoder_ticks[2]);
     // Serial.print("  Right ticks: "); Serial.println(localData.encoder_ticks[1] + localData.encoder_ticks[3]);  
     ahrsTaskHertCount = motorTaskHertCount = 0;
+    
     vTaskDelay(1000 / portTICK_PERIOD_MS);
   }
 }

@@ -22,6 +22,7 @@ typedef struct {
 
 
 void printAHRSPacket(ahrsPacket_t data);
+void ahrsTask(void *pvParameters);
 
 class AHRS {
     public:
