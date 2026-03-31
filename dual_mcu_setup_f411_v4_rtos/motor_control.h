@@ -10,10 +10,10 @@ uint8_t motorCcontrolpins[3] = {PA8, PB0, PB13};
 uint8_t motorDcontrolpins[3] = {PA9, PB1, PB10};
 
 // Create motor objects
-STMPWMTimer motorA(motorAcontrolpins[0], 20000);   // TIM1_CH3
-STMPWMTimer motorB(motorBcontrolpins[0], 20000);   // TIM1_CH2 (same timer, different channel!)
-STMPWMTimer motorC(motorCcontrolpins[0], 20000);   // TIM1_CH1 (same timer, different channel!)
-STMPWMTimer motorD(motorDcontrolpins[0], 20000);   // TIM2_CH2 (different timer)
+STMPWMTimer motorA(motorAcontrolpins[0], 25000);   // TIM1_CH3
+STMPWMTimer motorB(motorBcontrolpins[0], 25000);   // TIM1_CH2 (same timer, different channel!)
+STMPWMTimer motorC(motorCcontrolpins[0], 25000);   // TIM1_CH1 (same timer, different channel!)
+STMPWMTimer motorD(motorDcontrolpins[0], 25000);   // TIM2_CH2 (different timer)
 
 
 bool initMotorDrivers()
@@ -172,7 +172,7 @@ void setLeftMotorsVoltage(float voltage) {
     voltage = constrain(voltage, -MAX_MOTOR_VOLTAGE, MAX_MOTOR_VOLTAGE);
 
     // Convert voltage to duty cycle based on current battery voltage
-    float duty = (voltage / batteryVoltage) * 100.0f;
+    float duty = (voltage / BATTERY_VOLTAGE) * 100.0f;
     duty = constrain(duty, -100.0f, 100.0f);
 
     bool forward = duty >= 0;
@@ -189,7 +189,7 @@ void setLeftMotorsVoltage(float voltage) {
 
 void setRightMotorsVoltage(float voltage) {
     voltage = constrain(voltage, -MAX_MOTOR_VOLTAGE, MAX_MOTOR_VOLTAGE);
-    float duty = (voltage / batteryVoltage) * 100.0f;
+    float duty = (voltage / BATTERY_VOLTAGE) * 100.0f;
     duty = constrain(duty, -100.0f, 100.0f);
 
     bool forward = duty >= 0;

@@ -16,6 +16,13 @@
 #define CMD_STARTUP_NACK    0x12   // F411 → S3: hardware init failed (with error code)
 #define CMD_RUN             0x13   // S3 → F411: start normal operation
 
+// Power Status data
+#define PWR_STATUS          0X14
+
+
+// comm_protocol.h (additions)
+#define CMD_SET_LEFT_VOLTAGE   0x05   // set left motor voltage (float, volts)
+#define CMD_SET_RIGHT_VOLTAGE  0x06   // set right motor voltage (float, volts)
 
 // Velocity control
 #define CMD_SET_V           0x01   // set linear velocity (float m/s)
@@ -34,6 +41,15 @@ struct ahrsPacketPacked_t {
   int32_t encoder_ticks[4];
 };
 #pragma pack()
+
+#pragma pack(1)
+typedef struct {
+  unsigned long timestamp_ms;
+  float batteryVoltage;
+  float systemCurrent;
+} pwrStatus_t;
+#pragma pack()
+
 
 
 enum commState {

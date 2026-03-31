@@ -7,6 +7,8 @@
 #define SDA_PIN GPIO_NUM_8
 #define SCL_PIN GPIO_NUM_9
 
+#define BATTERY_PIN GPIO_NUM_4
+#define BATTERY_FULL_VOLT 12.6
 
 #define NUM_SENSORS 4
 

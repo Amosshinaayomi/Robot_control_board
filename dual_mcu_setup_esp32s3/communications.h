@@ -1,8 +1,13 @@
 #pragma once
 
 #include "comm_protocol.h"
+#include "pwr_mgmt.h"
+
 #define commSerial Serial2
 
+// communication flags
+bool commsEstablished;
+bool commsTimeoutExceeded;
 
 ahrsPacketPacked_t lastestAhrsPacket;
 SemaphoreHandle_t dataMutex;
@@ -10,6 +15,8 @@ SemaphoreHandle_t dataMutex;
 volatile bool startupAckReceived = false;
 volatile bool startupNackReceived = false;
 volatile uint8_t startupErrorCode = 0;
+
+
 
 void printlastestAHRSPacket(ahrsPacketPacked_t data);
 void indicateError(uint8_t code);
@@ -60,10 +67,35 @@ void send_message(byte type, byte len, byte* payload) {
 void commsTask(void* parameter)
 {
     TickType_t lastWake = xTaskGetTickCount();
-    const TickType_t period = pdMS_TO_TICKS(20);
+    const TickType_t period = pdMS_TO_TICKS(10);
     for(;;)
     {
-        
+        if(commsEstablished)
+        {
+            pwrStatus_t currentPwrStatus;
+            xSemaphoreTake(sysPwrMutex, portMAX_DELAY);
+            currentPwrStatus = sysPwrStatus;
+            xSemaphoreGive(sysPwrMutex);
+
+            uint8_t packet[sizeof(pwrStatus_t) + 3];
+            uint8_t idx = 0;
+            // Packet header, Start byte
+            packet[idx++] = PKT_START_BYTE;
+            // Packet data type
+            packet[idx++] = PWR_STATUS;
+            // data type size
+            packet[idx++] = sizeof(pwrStatus_t);
+            // copy stored data into packet
+            memcpy(&packet[idx], &currentPwrStatus, sizeof(pwrStatus_t));
+            // increase packet size to contain sensor data struct
+            idx += sizeof(pwrStatus_t);
+
+            packet[idx++] = compute_checksum(packet, idx);
+            commSerial.write(packet, idx);
+            Serial.println("Power data sent successfully");
+
+        }
+
         while (commSerial.available()) {  
             byte b = commSerial.read();
             switch(currentState) {
@@ -116,8 +148,8 @@ void commsTask(void* parameter)
                     xSemaphoreGive(dataMutex);
                     // Copy data from buffer into struct
      
-                    printlastestAHRSPacket(lastestAhrsPacket);
-                    sendVisualizationData(lastestAhrsPacket);
+                    // printlastestAHRSPacket(lastestAhrsPacket);
+                    // sendVisualizationData(lastestAhrsPacket);
 
                 } else if(rx_type == PKT_TYPE_COMMAND) {
                     Serial.println("Valid command received");
@@ -163,6 +195,7 @@ void performStartupHandshake() {
             if (startupAckReceived) {
                 Serial.println("F411 startup successful");
                 sendCommand(CMD_RUN, NULL, 0);
+                commsEstablished = true;
                 indicateError(startupErrorCode);
                 Serial.println("Sent RUN command");
                 return; // success
@@ -180,12 +213,13 @@ void performStartupHandshake() {
         Serial.println("Timeout, retrying...");
     }
     Serial.println("F411 not responding. Check connection.");
+    commsTimeoutExceeded = true;
     indicateError(255); // timeout error
     for(;;)
     {
         rgbLedWrite(RGB_BUILTIN, RGB_BRIGHTNESS, 0, 0);  // Red
         vTaskDelay(pdMS_TO_TICKS(400));
-        rgbLedWrite(RGB_BUILTIN, 0, 0, 0);  // Red
+        rgbLedWrite(RGB_BUILTIN, 0, 0, 0);  // black
         vTaskDelay(pdMS_TO_TICKS(400));
     }
 }

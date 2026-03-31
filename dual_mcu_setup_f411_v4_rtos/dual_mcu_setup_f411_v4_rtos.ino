@@ -12,6 +12,7 @@ extern "C" void vApplicationStackOverflowHook(TaskHandle_t xTask, char *pcTaskNa
     while (1);
 }
 
+
 // Create encoder manager instance
 EncoderManager encoderManager;
 AHRS ahrs(SDA_PIN, SCL_PIN, 4000000UL);
@@ -22,10 +23,14 @@ MotionController motionController;
 ahrsPacket_t ahrsData;
 SemaphoreHandle_t ahrsMutex;   // protects ahrsData
 
+pwrStatus_t lastestPwrStatus;
+SemaphoreHandle_t sysPwrMutex;
+
+// Hardware system flags
 bool systemRunning = false;              // controls main tasks
 SemaphoreHandle_t startSemaphore = NULL; // optionally, for tasks to wait
-
 static bool hardwareInitialized = false;
+uint8_t hardwareSensorStatus = 0;
 
 // Task handles for debugging
 TaskHandle_t ahrsHandle = NULL;
@@ -48,7 +53,7 @@ long motorChangeMillis;
 int ahrsTaskHertCount  = 0;
 int motorTaskHertCount = 0;
 
-uint8_t hardwareSensorStatus = 0;
+
 
 bool initAllHardware(uint8_t* errorCode);
 
@@ -116,7 +121,6 @@ void commsTask(void *parameter) {
                 uint8_t paramLen = rxLen - 1;
                 uint8_t *params = (paramLen > 0) ? &rxBuffer[1] : NULL;
 
-
                 // Handle startup and run velocity commands
                 switch (cmd) {
                   case CMD_STARTUP_REQ: {
@@ -141,6 +145,23 @@ void commsTask(void *parameter) {
                 }
               }
             }
+            else if (rxType == PWR_STATUS) {
+              if(rxLen == sizeof(pwrStatus_t)) {
+                pwrStatus_t pwr;
+                memcpy(&pwr, rxBuffer, sizeof(pwrStatus_t));
+               
+                // Optionally store in a global with mutex
+                xSemaphoreTake(sysPwrMutex, portMAX_DELAY);
+                lastestPwrStatus = pwr;
+                BATTERY_VOLTAGE = lastestPwrStatus.batteryVoltage;                
+                xSemaphoreGive(sysPwrMutex);
+              // Now you can print or use the data
+              Serial.printf("Power: timestamp=%lu, voltage=%.2f\n", lastestPwrStatus.timestamp_ms, BATTERY_VOLTAGE);
+
+              }  else {
+                  Serial.printf("PWR_STATUS payload size mismatch: got %d, expected %d\n", rxLen, sizeof(pwrStatus_t));
+              }
+            }
           } else {
               Serial.println("Checksum error – packet corrupted");
           }
@@ -157,9 +178,6 @@ void commsTask(void *parameter) {
       xSemaphoreTake(ahrsMutex, portMAX_DELAY);
       localData = ahrsData;
       xSemaphoreGive(ahrsMutex);
-      // Serial.println("NORMAL AHRS data");
-      // printAHRSPacket(localData);
-      // Copy the local data content into the packed_struct
       ahrsPacketPacked_t txData;
       txData.timestamp_ms = localData.timestamp_ms;
       txData.roll = localData.roll;
@@ -169,9 +187,7 @@ void commsTask(void *parameter) {
       memcpy(txData.accel_g, localData.accel_g, sizeof(float)*3);
       memcpy(txData.gyro_dps, localData.gyro_dps, sizeof(float)*3);
       memcpy(txData.encoder_ticks, localData.encoder_ticks, sizeof(int32_t)*4);
-      // Serial.println("SENT AHRS data");
-      // printAHRSPacket(txData);
-      // Build packet
+
       uint8_t packet[sizeof(ahrsPacketPacked_t) + 3];
       uint8_t idx = 0;
       // Packet header, Start byte
@@ -189,7 +205,7 @@ void commsTask(void *parameter) {
       packet[idx++] = compute_checksum(packet, idx);
       // Publish data
       commSerial.write(packet, idx);
-      Serial.println("AHRS Data sent succesfully");
+      // Serial.println("AHRS Data sent succesfully");
     }
 
     vTaskDelayUntil(&lastWake, period);
@@ -223,7 +239,7 @@ void motionControlTask(void *pvParameters) {
     while (!systemRunning) {
       vTaskDelay(pdMS_TO_TICKS(100));
     }
-    motionController.setStraight(0.5f);
+    motionController.setStraight(0.35f);
 
 
     // Moving forward at 0.5m/s linear velocity and 3 angular vel
@@ -245,10 +261,12 @@ void motionControlTask(void *pvParameters) {
         // printAHRSPacket(localData);
         float leftTicksAvg = (localData.encoder_ticks[0] + localData.encoder_ticks[2]) / 2.0f;
         float rightTicksAvg = (localData.encoder_ticks[1] + localData.encoder_ticks[3]) / 2.0f;
-        // Serial.printf("lefTicksAvg is %.f\n", leftTicksAvg);
-        // Serial.printf("rightTicksAvg is %.f\n", rightTicksAvg);
+        Serial.printf("lefTicksAvg is %.f\n", leftTicksAvg);
+        Serial.printf("rightTicksAvg is %.f\n", rightTicksAvg);
+      
+              
         // Update motion controller
-        motionController.update(leftTicksAvg, rightTicksAvg, localData.yaw, localData.yawRate, 0.02f);
+          motionController.update(leftTicksAvg, rightTicksAvg, localData.yaw, 0.02f);
 
         vTaskDelayUntil(&lastWake, period);
     }
@@ -269,27 +287,37 @@ void motorTask(void *pvParameters)
       vTaskDelay(pdMS_TO_TICKS(10));
       continue;
     }
-    if (motor_speed < 20) motor_speed = 20;
-    
-    if(millis() - lastPrint >= 28) {
 
-      if (directionState == 0) analog_move_f(motor_speed);
-      else if (directionState == 1) analog_move_b(motor_speed);
-      else if (directionState == 2) analog_turn_l(motor_speed);
-      else if (directionState == 3) analog_turn_r(motor_speed);
-      else if (directionState == 4) analog_move_f(MAX_MOTOR_VOLTAGE/batteryVoltage * 100);
+    // setLeftMotorsVoltage(6);
+    // setRightMotorsVoltage(6); 
 
-      motor_speed = fmodf((motor_speed + 1), (MAX_MOTOR_VOLTAGE/batteryVoltage * 100));
-      Serial.println(motorA.read());
-      lastPrint = millis();
-    }
-
-    if(millis() - motorChangeMillis >= 2000)
+    if(BATTERY_VOLTAGE >= 9.0)
     {
-      directionState++;
-      directionState = (directionState + 1) % 5;
-      motorChangeMillis = millis();
+      setLeftMotorsVoltage(6);
+      setRightMotorsVoltage(6);      
     }
+
+    // if (motor_speed < 20) motor_speed = 20;
+    
+    // if(millis() - lastPrint >= 28) {
+
+    //   if (directionState == 0) analog_move_f(motor_speed);
+    //   else if (directionState == 1) analog_move_b(motor_speed);
+    //   else if (directionState == 2) analog_turn_l(motor_speed);
+    //   else if (directionState == 3) analog_turn_r(motor_speed);
+    //   else if (directionState == 4) analog_move_f(MAX_MOTOR_VOLTAGE/BATTERY_VOLTAGE * 100);
+
+    //   motor_speed = fmodf((motor_speed + 1), (MAX_MOTOR_VOLTAGE/BATTERY_VOLTAGE * 100));
+    //   Serial.println(motorA.read());
+    //   lastPrint = millis();
+    // }
+
+    // if(millis() - motorChangeMillis >= 2000)
+    // {
+    //   directionState++;
+    //   directionState = (directionState + 1) % 5;
+    //   motorChangeMillis = millis();
+    // }
     
     motorTaskHertCount++;
     vTaskDelayUntil(&lastWake, pdMS_TO_TICKS(50));
@@ -384,8 +412,14 @@ void setup() {
     // while(!Serial) {delay(50);}
     commSerial.begin(115200);
     ahrsMutex = xSemaphoreCreateMutex();
+    sysPwrMutex = xSemaphoreCreateMutex();
+
     if (ahrsMutex == NULL) {
-        Serial.println("Failed to create mutex");
+        Serial.println("Failed to create ahrsmutex");
+        while (1);
+    }
+    if (sysPwrMutex == NULL) {
+        Serial.println("Failed to create sysPwrmutex");
         while (1);
     }
     // Serial.printf("hardware start millis %i\n", millis());
@@ -402,8 +436,8 @@ void setup() {
 
     xTaskCreate(ahrsTask, "AHRS", 1024, NULL, 3, &ahrsHandle);
     xTaskCreate(motionSensorTask, "Motion", 512, NULL, 2, &motionHandle); // priority 2
-    // xTaskCreate(motorTask, "Motor", 512, NULL, 2, &motorHandle);
-    xTaskCreate(motionControlTask, "MotionControl", 1024, NULL, 2, &motionControlHandle);
+    xTaskCreate(motorTask, "Motor", 512, NULL, 2, &motorHandle);
+    // xTaskCreate(motionControlTask, "MotionControl", 1024, NULL, 2, &motionControlHandle);
     xTaskCreate(printTask, "Print", 256, NULL, 1, &printHandle);
     pinMode(LED_BUILTIN, OUTPUT);
     Serial.println("All tasks created, starting scheduler...");
