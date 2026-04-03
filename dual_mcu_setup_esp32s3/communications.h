@@ -92,7 +92,7 @@ void commsTask(void* parameter)
 
             packet[idx++] = compute_checksum(packet, idx);
             commSerial.write(packet, idx);
-            Serial.println("Power data sent successfully");
+            // Serial.println("Power data sent successfully");
 
         }
 
@@ -105,7 +105,7 @@ void commsTask(void* parameter)
                 break;
             case WAIT_TYPE: 
                 rx_type = b;
-                Serial.printf("packet type is 0x%X\n", rx_type);
+                // Serial.printf("packet type is 0x%X\n", rx_type);
                 currentState = WAIT_LEN;
                 break;
 
@@ -120,7 +120,7 @@ void commsTask(void* parameter)
                 } else {
                 currentState = WAIT_START;
                 }
-                Serial.printf("packet length is %i\n", rx_len);
+                // Serial.printf("packet length is %i\n", rx_len);
                 break;
             case WAIT_PAYLOAD: 
                 rx_buffer[rx_index++] = b;
@@ -138,8 +138,8 @@ void commsTask(void* parameter)
                 // Check packet type and parse data
                 if(rx_type == PKT_TYPE_SENSOR)
                 {
-                    Serial.println("Valid sensor data received");
-                    Serial.println("AHRS SENSOR DATA PACKET IS RECEIVED");
+                    // Serial.println("Valid sensor data received");
+                    // Serial.println("AHRS SENSOR DATA PACKET IS RECEIVED");
                     ahrsPacketPacked_t receivedPacket;
                     memcpy(&receivedPacket, rx_buffer, sizeof(ahrsPacketPacked_t));               
 
@@ -165,7 +165,24 @@ void commsTask(void* parameter)
                             startupErrorCode = rx_buffer[1];
                         }
                     }
-                }
+                } else if (rx_type == PKT_TYPE_LOG && rx_len >= 1) {
+                    uint8_t logType = rx_buffer[0];
+                    size_t dataLen = rx_len - 1;
+                    if (logType == LOG_TYPE_SPEED_TEST && dataLen == sizeof(speed_test_log_t)) {
+                        speed_test_log_t log;
+                        memcpy(&log, &rx_buffer[1], dataLen);
+                        // Optionally print or forward via ESP‑NOW
+                        Serial.printf("SPEED_TEST: %.2f,%.2f,%.2f,%.2f\n",
+                        log.leftVoltage, log.rightVoltage,
+                        log.leftSpeed, log.rightSpeed);
+                        speedTestResults.push_back(log);    
+                        // Forward over ESP‑NOW (if needed)
+                    
+                    }
+    else {
+        Serial.println("Unknown log type or size mismatch");
+    }
+}
                 } else {
                     Serial.println("Checksum error – packet corrupted");
                 }
@@ -274,6 +291,3 @@ void sendVisualizationData(ahrsPacketPacked_t data)
     Serial.print(",ROLL:"); Serial.print(data.roll);
     Serial.print(",YAW:"); Serial.println(data.yaw);       
 }
-
-
-
