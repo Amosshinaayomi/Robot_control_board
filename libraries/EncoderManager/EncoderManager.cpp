@@ -33,7 +33,7 @@ bool EncoderManager::addEncoder(int pin) {
 
   // Initialize based on current state
   int initialState = digitalRead(pin);
-  Serial.printf("Encoder Initial State is %i\n", initialState);
+  // Serial.printf("Encoder Initial State is %i\n", initialState);
   if(initialState == HIGH) {
     encoders_[encoderCount_].readings = 0xFFFF;
     encoders_[encoderCount_].transition = 0xFFFE;
