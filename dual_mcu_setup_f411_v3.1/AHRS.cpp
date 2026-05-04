@@ -43,7 +43,7 @@ bool AHRS::begin() {
     imu.setGyroRange(500); // ±500 degrees/sec
     
     // Wait for gyro to enter normal mode (should happen in configureSensor())
-    delay(50); // Give time for power mode transition
+    delay(100); // Give time for power mode transition
 
     // Set Output Data Rates (ODR)
     imu.setAccelRate(0x0B); // 800Hz - High rate for responsive correction
@@ -57,7 +57,7 @@ bool AHRS::begin() {
         Serial.println("WARNING: Gyro not in normal mode - temperature sensor limited.");
         temperatureCompEnabled = false;
     }
-    delay(50);
+    delay(500); // let it settle
     // ---- B. PERFORM STARTUP CALIBRATION ----
     calibrateSensors();
 
@@ -180,21 +180,20 @@ void AHRS::update()
     // ---- F. GET FILTER OUTPUTS ----
     FusionQuaternion quat = FusionAhrsGetQuaternion(&ahrsFilter);
     FusionEuler euler = FusionQuaternionToEuler(quat);
-    // Serial.printf("AHRS raw: roll=%.2f, pitch=%.2f, yaw=%.2f\n", euler.angle.roll, euler.angle.pitch, euler.angle.yaw);
+
     // --- CRITICAL SECTION: update shared members ---
     
     bool accelIgnored = false;
-    if (xSemaphoreTake(dataMutex, 0) == pdTRUE) {
+    if (xSemaphoreTake(dataMutex, pdMS_TO_TICKS(100)) == pdTRUE) {
         // dataNotfetched = false;
-        roll = (euler.angle.roll);
+        roll = -(euler.angle.roll);
         pitch = euler.angle.pitch;
         yaw = -(euler.angle.yaw);
+        yawRate = gz_dps;   // filtered yaw rate
 
-
-        // gx_dps = -gx_dps;
+        gx_dps = -gx_dps;
         gz_dps = -gz_dps;
-
-        yawRate = gz_dps;   // filtered yaw rate        
+        
         accelFiltered[0] = ax_g;
         accelFiltered[1] = ay_g;
         accelFiltered[2] = az_g;
@@ -226,11 +225,13 @@ void AHRS::update()
 
 
 // --- Getters 
+
+
 void AHRS::getAccel(float accelData[3]) const {
     // --- CRITICAL SECTION: update shared members ---
     
     // bool dataNotfetched = true;
-    if (xSemaphoreTake(dataMutex, 0) == pdTRUE) {
+    if (xSemaphoreTake(dataMutex, pdMS_TO_TICKS(100)) == pdTRUE) {
         accelData[0] = accelFiltered[0];
         accelData[1] = accelFiltered[1];
         accelData[2] = accelFiltered[2];
@@ -245,8 +246,10 @@ void AHRS::getGyro(float gyroData[3]) const {
     // --- CRITICAL SECTION: update shared members ---
     
     // bool dataNotfetched = true;
-    if (xSemaphoreTake(dataMutex, 0) == pdTRUE) {
+    if (xSemaphoreTake(dataMutex, pdMS_TO_TICKS(100)) == pdTRUE) {
         // dataNotfetched = false;
+        
+        
         gyroData[0] = gyroFiltered[0];
         gyroData[1] = gyroFiltered[1];
         gyroData[2] = gyroFiltered[2];
@@ -258,73 +261,66 @@ void AHRS::getGyro(float gyroData[3]) const {
 }
 float AHRS::getRoll() const {
     float val;
-    static float lastValidValue = 0.0f;
     // bool dataNotfetched = true;
-    if (xSemaphoreTake(dataMutex, 0) == pdTRUE) {
+    if (xSemaphoreTake(dataMutex, pdMS_TO_TICKS(100)) == pdTRUE) {
         // dataNotfetched = false;
+        
         val = roll;
-        lastValidValue = val;
         xSemaphoreGive(dataMutex);
     } else {
         // Serial.println("wasn't able to fetch data.");
-        val = lastValidValue; // fallback, should not happen
+        val = 0.0f; // fallback, should not happen
     }
     return val;
 }
 
 float AHRS::getPitch() const {
     float val;
-    static float lastValidValue = 0.0f;
     // bool dataNotfetched = true;
-    if (xSemaphoreTake(dataMutex, 0) == pdTRUE) {
+    if (xSemaphoreTake(dataMutex, pdMS_TO_TICKS(100)) == pdTRUE) {
         // dataNotfetched = false;
         
         val = pitch;
-        lastValidValue = val;
         xSemaphoreGive(dataMutex);
     } else {
         // Serial.println("wasn't able to fetch data.");
-        val = lastValidValue;
+        val = 0.0f;
     }
     return val;
 }
 
 float AHRS::getYaw() const {
     float val;
-    static float lastValidValue = 0.0f;
     // bool dataNotfetched = true;
-    if (xSemaphoreTake(dataMutex, 0) == pdTRUE) {
+    if (xSemaphoreTake(dataMutex, pdMS_TO_TICKS(100)) == pdTRUE) {
         // dataNotfetched = false;
         
         val = yaw;
-        lastValidValue = val;
         xSemaphoreGive(dataMutex);
     } else {
         // Serial.println("wasn't able to fetch data.");
-        val = lastValidValue;
+        val = 0.0f;
     }
     return val;
 }
 
 float AHRS::getYawRate() const {
     float val;
-    static float lastValidValue = 0.0f;
     // bool dataNotfetched = true;
-    if (xSemaphoreTake(dataMutex, 0) == pdTRUE) {
+    if (xSemaphoreTake(dataMutex, pdMS_TO_TICKS(100)) == pdTRUE) {
         // dataNotfetched = false;
         val = yawRate;
-        lastValidValue = val;
         xSemaphoreGive(dataMutex);
     } else {
         // Serial.println("wasn't able to fetch data.");
-        val = lastValidValue;
+        val = 0.0f;
     }
     return val;
 }
 
 void AHRS::getLinearAcceleration(float &x, float &y, float &z) const {
     // bool dataNotfetched = true;
-    if (xSemaphoreTake(dataMutex, 0) == pdTRUE) {
+    if (xSemaphoreTake(dataMutex, pdMS_TO_TICKS(100)) == pdTRUE) {
         // dataNotfetched = false;
         
         x = linearAccBody[0];
@@ -408,7 +404,7 @@ void printAHRSPacket(ahrsPacket_t data)
     Serial.print(", ROLL:"); Serial.print(data.roll);
     Serial.print(", YAW:"); Serial.println(data.yaw); 
 
-    Serial.print("YawRate: "); Serial.println(data.yawRate);
     Serial.printf("Front Left side encoder tick is %i\nFront right side encoder tick is %i\nBack Left side encoder tick is %i\nBack right side encoder tick is %i\n",data.encoder_ticks[0], data.encoder_ticks[1], data.encoder_ticks[2], data.encoder_ticks[3]);  
     Serial.println();    
 }
+

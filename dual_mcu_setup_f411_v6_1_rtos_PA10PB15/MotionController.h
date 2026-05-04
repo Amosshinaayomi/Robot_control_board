@@ -8,7 +8,8 @@ class MotionController {
 public:
     MotionController()
         : _pidLeft(KP_VEL, KI_VEL, KD_VEL, CONTROL_DT, -MAX_MOTOR_VOLTAGE, MAX_MOTOR_VOLTAGE),
-         _pidRight(KP_VEL, KI_VEL, KD_VEL, CONTROL_DT, -MAX_MOTOR_VOLTAGE, MAX_MOTOR_VOLTAGE),
+        _pidRight(KP_VEL, KI_VEL, KD_VEL, CONTROL_DT, -MAX_MOTOR_VOLTAGE, MAX_MOTOR_VOLTAGE),
+        _pidOmega(KP_OMEGA, KI_OMEGA, KD_OMEGA, CONTROL_DT, -MAX_OMEGA_RADPS, MAX_OMEGA_RADPS),
         prevLeft(0.0), prevRight(0.0) {}
 
     // Set target velocities (linear m/s, angular rad/s)
@@ -27,12 +28,10 @@ public:
     }
 
     // Main control update, to be called at fixed interval (dt seconds)
-    // solve encoder quantization by reducing freq and using the summation of average values to compute
-    // pid output rather than using encoder values, directly.
-    // Also integrated a feedforward controller 
-    void update(float leftTicksAvg, float rightTicksAvg, float yaw, float dt, float *motorsVoltage) {
+    void update(float leftTicksAvg, float rightTicksAvg, float yaw, float yawRate_radps, float dt, float *motorsVoltage) {
         // 1. Compute wheel speeds (ticks/s)
         Serial.printf("absolute yaw is %.5f\n", yaw);
+        Serial.printf("yawRate is %.5f\n", yawRate_radps);   
         Serial.printf("prevleft tick is %f\n", prevLeft);
         Serial.printf("prev right tick is %f\n", prevRight);
         float leftTickSpeed = (leftTicksAvg - prevLeft) / dt;
@@ -60,7 +59,8 @@ public:
         Serial.printf("leftTickSpeedF is %.f\nrightTickSpeedF is %.f\n", leftTickSpeedF, rightTickSpeedF); 
         prevLeft = leftTicksAvg;
         prevRight = rightTicksAvg;
-
+        // Outer heading loop (produces desired yaw rate)
+        float desiredOmega = 0.0f;
         // 2. Heading correction if in straight mode
         if (_straightMode) {
             if (!_headingSetpointValid) {
@@ -68,15 +68,23 @@ public:
                 _headingSetpointValid = true; 
             }
             float headingError = yaw - _headingSetpoint;
+            Serial.printf("set point is %.5f\n", _headingSetpoint);
             // Normalize to [-π, π] (assuming yaw in radians)
             headingError = atan2f(sinf(headingError), cosf(headingError));
             // Adjust angular velocity command
-            _targetOmega = KP_HEADING * headingError;
+            desiredOmega = KP_HEADING * headingError;
+            Serial.printf("heading error %.5f\n", headingError);            
         }
 
+        // Inner angular velocity loop (PID on yaw rate)
+
+        Serial.printf("MAX_OMEGA_RADPS is %.5f\n", MAX_OMEGA_RADPS);        
+        float omegaCorrection = _pidOmega.compute(desiredOmega, yawRate_radps);
+        omegaCorrection= constrain(omegaCorrection, -MAX_OMEGA_RADPS,  MAX_OMEGA_RADPS); 
+        Serial.printf("omega correction is %.5f\n", omegaCorrection);
         // 3. Desired side speeds from kinematics (m/s)
-        float leftDesired_mps = _targetV - _targetOmega * ROBOT_TRACK_WIDTH / 2.0f;
-        float rightDesired_mps = _targetV + _targetOmega * ROBOT_TRACK_WIDTH / 2.0f;
+        float leftDesired_mps = _targetV - omegaCorrection * ROBOT_TRACK_WIDTH / 2.0f;
+        float rightDesired_mps = _targetV + omegaCorrection * ROBOT_TRACK_WIDTH / 2.0f;
         Serial.printf("leftDesired_mps is %f\n", leftDesired_mps);
         Serial.printf("rightDesired_mps is %f\n", rightDesired_mps);
 
@@ -149,7 +157,7 @@ public:
     }
 
 private:
-    PID _pidLeft, _pidRight;
+    PID _pidLeft, _pidRight, _pidOmega;
     float _targetV = 0.0f, _targetOmega = 0.0f;
     bool _straightMode = false;
     float _headingSetpoint = 0.0f;

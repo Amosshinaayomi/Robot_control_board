@@ -1,7 +1,6 @@
 #include "AHRS.h"
 #include <math.h>
 
-
 AHRS::AHRS(uint8_t sdaPin, uint8_t sclPin, uint32_t i2cSpeed)
     : imu(0x69),
       mag(0x2c),
@@ -392,8 +391,10 @@ void AHRS::applyTemperatureCompensation(float currentTemp, float gyroScale) {
 
 
 
-void printAHRSPacket(ahrsPacket_t data)
+void printAHRSPacket(motionSensorPacket_t data)
 {
+    
+    Serial.println();
     Serial.print("Time stamp: "); Serial.println(data.timestamp_ms);
     Serial.print("Gyro (dps) X,Y,Z: ");
     Serial.print(data.gyro_dps[0], 3); Serial.print(", ");

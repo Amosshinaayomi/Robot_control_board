@@ -392,7 +392,7 @@ void AHRS::applyTemperatureCompensation(float currentTemp, float gyroScale) {
 
 
 
-void printAHRSPacket(ahrsPacket_t data)
+void printAHRSPacket(motionSensorPacket_t data)
 {
     Serial.print("Time stamp: "); Serial.println(data.timestamp_ms);
     Serial.print("Gyro (dps) X,Y,Z: ");

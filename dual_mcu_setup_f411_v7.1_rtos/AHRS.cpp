@@ -1,7 +1,6 @@
 #include "AHRS.h"
 #include <math.h>
 
-
 AHRS::AHRS(uint8_t sdaPin, uint8_t sclPin, uint32_t i2cSpeed)
     : imu(0x69),
       mag(0x2c),
@@ -26,7 +25,7 @@ AHRS::AHRS(uint8_t sdaPin, uint8_t sclPin, uint32_t i2cSpeed)
 
 bool AHRS::begin() {
     // Initialize IMU
-    if (!imu.begin(SDA_PIN, SCL_PIN, 4000000UL)) {
+    if (!imu.begin(SDA_PIN, SCL_PIN, i2cSpeed)) {
         Serial.println("Failed to connect to BMI160!");
         return false;
     }
@@ -59,25 +58,38 @@ bool AHRS::begin() {
     }
     delay(50);
     // ---- B. PERFORM STARTUP CALIBRATION ----
-    calibrateSensors();
+    // calibrateIMU();
 
 
     // // Try to read initial temperature
     readTemperature();
     // Mag initialization
-    if(!mag.begin(SDA_PIN, SCL_PIN, 4000000UL)) {
-        Serial.println("Failed to connect to Mag");
+    // Initialize QMC5883P magnetometer
+    if (!mag.begin(SDA_PIN, SCL_PIN, i2cSpeed)) {
+        Serial.println("Failed to connect to QMC5883P!");
         return false;
-    } else {
-        Serial.println("QMC5883 initialized successfully");
-        // Set your local magnetic declination
-        mag.setDeclination(7.4); 
-
-        // Set orientation (adjust based on your sensor mounting)
-        mag.setOrientation(QMC5883::ORIENTATION_ROTATE_270);  
     }
 
+    Serial.println("QMC5883P Connected.");
 
+    // Set orientation to match your IMU's coordinate convention (NWU)
+    // This depends on physical mounting; see Section 2.
+    mag.setOutputDataRate(QMC5883::ODR_100Hz);
+    Serial.println("Reading at magnetic north");
+    // QMC5883::Data raw;
+    // mag.read(raw, QMC5883::RNG_8G);
+    // Serial.print("Raw X:"); Serial.print(raw.x);
+    // Serial.print(" Y:"); Serial.print(raw.y);
+    // Serial.print(" Z:"); Serial.println(raw.z);
+    // delay(3000);
+    mag.setCustomOrientation(
+    1,    // BMI160 X from Raw Y
+    0,    // BMI160 Y from Raw X
+    2,    // BMI160 Z from Raw Z
+    false, // Do not invert X (Raw Y already negative)
+    true,  // Invert Y (to get negative when facing East)
+    true   // Invert Z (to make downward field negative)
+); // due to magnetometer orientation relative to the IMU
 
 
     // ---- C. CONFIGURE FUSION AHRS SETTINGS ----
@@ -346,7 +358,7 @@ void AHRS::setMagneticDeclination(float declDeg) {
 }
 
 // Calibration helpers (unchanged)
-void AHRS::calibrateSensors() {
+void AHRS::calibrateIMU() {
     Serial.println("Calibrating Gyroscope (keep robot still)...");
     imu.calibrateGyro(500, &gyroBias[0], &gyroBias[1], &gyroBias[2]);
     for (int i = 0; i < 3; i++) originalGyroBias[i] = gyroBias[i];
@@ -392,8 +404,10 @@ void AHRS::applyTemperatureCompensation(float currentTemp, float gyroScale) {
 
 
 
-void printAHRSPacket(ahrsPacket_t data)
+void printAHRSPacket(motionSensorPacket_t data)
 {
+    
+    Serial.println();
     Serial.print("Time stamp: "); Serial.println(data.timestamp_ms);
     Serial.print("Gyro (dps) X,Y,Z: ");
     Serial.print(data.gyro_dps[0], 3); Serial.print(", ");

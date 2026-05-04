@@ -1,4 +1,4 @@
- #pragma once
+#pragma once
 #include <Arduino.h>
 
 // // --- 1. Configuration ---
@@ -6,7 +6,7 @@
 #define ENCODER_PIN_2  PB2 // Front right
 #define ENCODER_PIN_3 PA15 // Back left
 #define ENCODER_PIN_4 PB5 // Back right
-#define MOTOR_FREQ 27000
+#define MOTOR_FREQ 2000
 
 #define TOTAL_ENCODERS 4
 #define MOTOR_STBY_PIN PB12

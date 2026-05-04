@@ -11,6 +11,7 @@ public:
         float error = setpoint - measurement;
         // Proportional
         float P = _kp * error;
+        // Integral
         if (_ki != 0.0f) {
             _integral += error * _dt;
             _integral = constrain(_integral, _out_min / _ki, _out_max / _ki);

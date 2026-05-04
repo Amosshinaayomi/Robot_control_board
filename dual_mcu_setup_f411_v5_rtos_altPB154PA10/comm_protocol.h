@@ -2,7 +2,6 @@
 #pragma once
 
 #include <stdint.h>
-#include <vector>
 
 // Packet start byte
 #define PKT_START_BYTE      0xAA
@@ -45,7 +44,12 @@ struct ahrsPacketPacked_t {
 };
 #pragma pack()
 
-
+#pragma pack(1)
+typedef struct {
+  unsigned long timestamp_ms;
+  float batteryVoltage;
+  float systemCurrent;
+} pwrStatus_t;
 #pragma pack()
 
 #pragma pack(1)
@@ -56,10 +60,8 @@ typedef struct {
     float rightVoltage;
     float leftSpeed;         // ticks/s
     float rightSpeed;
-    float yawRate_dps;
 } speed_test_log_t;
-
-std::vector<speed_test_log_t> speedTestResults;
+#pragma pack()
 
 enum commState {
   WAIT_START,

@@ -15,7 +15,7 @@ extern "C" void vApplicationStackOverflowHook(TaskHandle_t xTask, char *pcTaskNa
 
 // Create encoder manager instance
 EncoderManager encoderManager;
-AHRS ahrs(SDA_PIN, SCL_PIN, 4000000UL);
+AHRS ahrs(SDA_PIN, SCL_PIN, 1000000UL);
 MotionController motionController;
 
 
@@ -238,13 +238,12 @@ void commsTask(void *parameter) {
 void ahrsTask(void *pvParameters) {
   TickType_t lastWake = xTaskGetTickCount();
   const TickType_t period = pdMS_TO_TICKS(2.5); 
-  digitalWrite(LED_BUILTIN, HIGH);  
   for(;;) {
     if (!systemRunning) {
         vTaskDelay(pdMS_TO_TICKS(100));
         continue;
     }
-
+    digitalWrite(LED_BUILTIN, HIGH);
     ahrs.update();
     ahrsTaskHertCount++;
     vTaskDelayUntil(&lastWake, period);  
@@ -254,25 +253,28 @@ void ahrsTask(void *pvParameters) {
 }
 
 // Motion Control Task: runs at 50 Hz (20 ms)
+// quantization issue
 void motionControlTask(void *pvParameters) {
     TickType_t lastWake = xTaskGetTickCount();
-    const TickType_t period = pdMS_TO_TICKS(20); // 50 Hz
+    const TickType_t period = pdMS_TO_TICKS(50); // 50 Hz
+    CONTROL_DT = period / 1000.0;
     long prevTimestamp_ms = 0;
     float dt = 0.0f;
     // Example: start going straight at 0.5 m/s after 2 seconds
     while (!systemRunning) {
       vTaskDelay(pdMS_TO_TICKS(100));
     }
-    // motionController.setStraight(0.5f);
-    motionController.setStraight(0.3f);
+    motionController.setStraight(0.4f);
+
     // Moving forward at 0.5m/s linear velocity and 3 angular vel
-    // motionController.setTargetVelocity(0.3f, 3.0f); 
+    // motionController.setTargetVelocity(0.4f, 3.0f); 
 
     for (;;) {
-       if (!systemRunning) {
-          vTaskDelay(pdMS_TO_TICKS(100));
-          continue;
-        }
+       if (!systemRunning) 
+       {
+            vTaskDelay(pdMS_TO_TICKS(100));
+            continue;
+       }
 
         // Serial.println("motion controller is running");
         // Grab latest sensor data
@@ -280,29 +282,51 @@ void motionControlTask(void *pvParameters) {
         xSemaphoreTake(ahrsMutex, portMAX_DELAY);
         localData = ahrsData;
         xSemaphoreGive(ahrsMutex);
-
+        Serial.printf("control loop period %f\n", CONTROL_DT);
         // Compute average ticks for left and right sides
         float leftTicksAvg = (localData.encoder_ticks[0] + localData.encoder_ticks[2]) / 2.0f;
         float rightTicksAvg = (localData.encoder_ticks[1] + localData.encoder_ticks[3]) / 2.0f;
-        // Serial.printf("yaw rate before conversion %.2f\n", localData.yawRate);
-        float yawRate_rad = localData.yawRate * DEG_TO_RAD;   // if yawRate is in deg/s
-        float yawRad = localData.yaw * DEG_TO_RAD;
-
-        Serial.printf("lefTicksAvg is %.f\n", leftTicksAvg);
-        Serial.printf("rightTicksAvg is %.f\n", rightTicksAvg);
+        Serial.printf("lefTicksAvg is %.2f\n", leftTicksAvg);
+        Serial.printf("rightTicksAvg is %.2f\n", rightTicksAvg);
         dt = (localData.timestamp_ms - prevTimestamp_ms) /1000.0;
-        Serial.printf("dt is %.2f\n", dt);
+        
+        if (dt < 0.001f) dt = period; // fallback to nominal
+        Serial.printf("dt is %.2f\n", dt);        
+        
+        float yawRad = localData.yaw * DEG_TO_RAD;
         prevTimestamp_ms = localData.timestamp_ms;
+        // Use an Exponential Moving average filter to increase quantization steps
+        static float leftTicksAvgF = 0;
+        static float rightTicksAvgF = 0;
+
+
         // Update motion controller
-        motionController.update(leftTicksAvg, rightTicksAvg, yawRad, yawRate_rad, dt);
+        float motorsVolt[2];
+        motionController.update(leftTicksAvg, rightTicksAvg,yawRad, dt, motorsVolt);
+
+        Serial.printf("left motor voltage is %.3f\nright motor voltage is %.3f\n", motorsVolt[0], motorsVolt[1]);
+ 
+        setLeftMotorsVoltage(motorsVolt[0]);
+        setRightMotorsVoltage(motorsVolt[1]); 
+        bool leftMotorDir = (motorsVolt[0] >= 0);   
+        bool rightMotorDir = (motorsVolt[1] >= 0);           
+        Serial.printf("left motor direction is %i\nright motor direction is %i\n", leftMotorDir, rightMotorDir);   
+        encoderManager.setDirection(0, leftMotorDir);
+        encoderManager.setDirection(2, leftMotorDir);
+        encoderManager.setDirection(1, rightMotorDir);
+        encoderManager.setDirection(3, rightMotorDir);
+
         motorControllerTaskHertCount++;
+
+        Serial.println();
+        Serial.println();
+        Serial.println();
         vTaskDelayUntil(&lastWake, period);
     }
 }
 
 void motorTask(void *pvParameters)
 {
-
   Serial.println("Motor task started");
   static unsigned long lastPrint = 0; 
   currentMillis = millis();
@@ -323,37 +347,33 @@ void motorTask(void *pvParameters)
     {
       if (speedTestMode) {
           // Apply test voltages (open loop)
-          setLeftMotorsVoltage(speedTestLeftVoltage);
-          setRightMotorsVoltage(speedTestRightVoltage);
+        bool leftMotorDir = (speedTestLeftVoltage >= 0);   
+        bool rightMotorDir = (speedTestRightVoltage >= 0);           
+      
+        setLeftMotorsVoltage(speedTestLeftVoltage);
+        setRightMotorsVoltage(speedTestRightVoltage);        
+        encoderManager.setDirection(0, leftMotorDir);
+        encoderManager.setDirection(1, leftMotorDir);
+        encoderManager.setDirection(2, rightMotorDir);
+        encoderManager.setDirection(3, rightMotorDir);
+
+
       } else {
           // Normal operation: PID outputs or stop
-
-          setLeftMotorsVoltage(6);
-          setRightMotorsVoltage(6); 
+          // (You can put your normal control code here, or just set to 0)
+        float voltage = -6.0;
+        bool leftMotorDir = (voltage >= 0);   
+        bool rightMotorDir = (voltage >= 0);           
+        
+        setLeftMotorsVoltage(voltage);
+        setRightMotorsVoltage(voltage);        
+        encoderManager.setDirection(0, leftMotorDir);
+        encoderManager.setDirection(2, leftMotorDir);
+        encoderManager.setDirection(1, rightMotorDir);
+        encoderManager.setDirection(3, rightMotorDir);
       }     
     }
 
-    // if (motor_speed < 20) motor_speed = 20;
-    
-    // if(millis() - lastPrint >= 28) {
-
-    //   if (directionState == 0) analog_move_f(motor_speed);
-    //   else if (directionState == 1) analog_move_b(motor_speed);
-    //   else if (directionState == 2) analog_turn_l(motor_speed);
-    //   else if (directionState == 3) analog_turn_r(motor_speed);
-    //   else if (directionState == 4) analog_move_f(MAX_MOTOR_VOLTAGE/BATTERY_VOLTAGE * 100);
-
-    //   motor_speed = fmodf((motor_speed + 1), (MAX_MOTOR_VOLTAGE/BATTERY_VOLTAGE * 100));
-    //   Serial.println(motorA.read());
-    //   lastPrint = millis();
-    // }
-
-    // if(millis() - motorChangeMillis >= 2000)
-    // {
-    //   directionState++;
-    //   directionState = (directionState + 1) % 5;
-    //   motorChangeMillis = millis();
-    // }
     
     motorTaskHertCount++;
     vTaskDelayUntil(&lastWake, pdMS_TO_TICKS(50));
@@ -382,14 +402,14 @@ void speedTestTask(void *pvParameters) {
                 Serial.printf("SET,LEFT,%.2f\n", speedTestLeftVoltage);
                 vTaskDelay(pdMS_TO_TICKS(100)); // short settling
 
-                noInterrupts();
+                
                 int32_t initLeft = (encoderManager.getTicks(0) + encoderManager.getTicks(2)) / 2;
                 int32_t initRight = (encoderManager.getTicks(1) + encoderManager.getTicks(3)) / 2;
                 interrupts();
 
                 vTaskDelay(pdMS_TO_TICKS(settleTimeMs));
 
-                noInterrupts();
+                
                 int32_t finalLeft = (encoderManager.getTicks(0) + encoderManager.getTicks(2)) / 2;
                 int32_t finalRight = (encoderManager.getTicks(1) + encoderManager.getTicks(3)) / 2;
                 interrupts();
@@ -425,14 +445,14 @@ void speedTestTask(void *pvParameters) {
 
                 vTaskDelay(pdMS_TO_TICKS(100));
 
-                noInterrupts();
+                
                 int32_t initLeft = (encoderManager.getTicks(0) + encoderManager.getTicks(2)) / 2;
                 int32_t initRight = (encoderManager.getTicks(1) + encoderManager.getTicks(3)) / 2;
                 interrupts();
 
                 vTaskDelay(pdMS_TO_TICKS(settleTimeMs));
 
-                noInterrupts();
+                
                 int32_t finalLeft = (encoderManager.getTicks(0) + encoderManager.getTicks(2)) / 2;
                 int32_t finalRight = (encoderManager.getTicks(1) + encoderManager.getTicks(3)) / 2;
                 interrupts();
@@ -466,14 +486,14 @@ void speedTestTask(void *pvParameters) {
 
                 vTaskDelay(pdMS_TO_TICKS(100));
 
-                noInterrupts();
+                
                 int32_t initLeft = (encoderManager.getTicks(0) + encoderManager.getTicks(2)) / 2;
                 int32_t initRight = (encoderManager.getTicks(1) + encoderManager.getTicks(3)) / 2;
                 interrupts();
 
                 vTaskDelay(pdMS_TO_TICKS(settleTimeMs));
 
-                noInterrupts();
+                
                 int32_t finalLeft = (encoderManager.getTicks(0) + encoderManager.getTicks(2)) / 2;
                 int32_t finalRight = (encoderManager.getTicks(1) + encoderManager.getTicks(3)) / 2;
                 interrupts();
@@ -530,8 +550,6 @@ void motionSensorTask(void *pvParameters)
     localData.pitch = ahrs.getPitch();
     localData.yaw = ahrs.getYaw();
 
-    // Encoder ticks (read atomically)
-    noInterrupts();
     localData.encoder_ticks[0] = encoderManager.getTicks(0);
     // Serial.printf("encoder 0 is %i\n", localData.encoder_ticks[0]);
     localData.encoder_ticks[1] = encoderManager.getTicks(1);
@@ -541,7 +559,6 @@ void motionSensorTask(void *pvParameters)
     localData.encoder_ticks[3] = encoderManager.getTicks(3);
     // Serial.printf("encoder 3 is %i\n", localData.encoder_ticks[3]);
     localData.yawRate = ahrs.getYawRate();
-    interrupts();
     // Accelerometer and gyro
     ahrs.getAccel(localData.accel_g); 
     ahrs.getGyro(localData.gyro_dps);   
@@ -565,7 +582,7 @@ void printTask(void *pvParameters)
   for(;;)
   {
     if(!systemRunning) {
-      vTaskDelay(pdMS_TO_TICKS(1000));
+      vTaskDelay(pdMS_TO_TICKS(10));
       continue;
     }
     ahrsPacket_t localData;
@@ -576,7 +593,7 @@ void printTask(void *pvParameters)
     // Serial.print("Yaw: "); Serial.print(localData.yaw);
     // Serial.print("  Left ticks: "); Serial.print(localData.encoder_ticks[0] + localData.encoder_ticks[2]);
     // Serial.print("  Right ticks: "); Serial.println(localData.encoder_ticks[1] + localData.encoder_ticks[3]);  
-    Serial.printf("motorcontrollertask hertz is %i\n", motorControllerTaskHertCount);    
+    // Serial.printf("motorcontrollertask hertz is %i\n", motorControllerTaskHertCount);    
     ahrsTaskHertCount = motorControllerTaskHertCount = motorTaskHertCount = 0;
 
     // byte data[] = {0x55, 0x01, 0x02, 0x03};   
@@ -623,17 +640,20 @@ void setup() {
       hardwareInitialized = true;
     } else {
       Serial.println("hardware initialization failed  sending Nack ....");
+      while(1) {
+        Serial.printf("hardware init failed errorcode %i\n", hardwareSensorStatus);
+      }
       hardwareInitialized = false;
   }
     
   // Serial.printf("hardware end millis %i\n", millis());
     xTaskCreate(commsTask, "comms", 1024, NULL, 2, &commsHandle);
-    Serial.println("Waiting rtup command from esp32s3");
+    Serial.println("Waiting startup command from esp32s3");
 
     xTaskCreate(ahrsTask, "AHRS", 1024, NULL, 4, &ahrsHandle);
     xTaskCreate(motionSensorTask, "Motion", 512, NULL, 3, &motionHandle); // priority 2
-    xTaskCreate(motorTask, "Motor", 512, NULL, 2, &motorHandle);
-    // xTaskCreate(motionControlTask, "MotionControl", 1024, NULL, 2, &motionControlHandle);
+    // xTaskCreate(motorTask, "Motor", 512, NULL, 2, &motorHandle);
+    xTaskCreate(motionControlTask, "MotionControl", 1024, NULL, 2, &motionControlHandle);
     xTaskCreate(printTask, "Print", 256, NULL, 1, &printHandle);
     // xTaskCreate(speedTestTask, "speedTestTask", 2048, NULL, 1, NULL);
     pinMode(LED_BUILTIN, OUTPUT);
@@ -665,8 +685,8 @@ bool initAllHardware(uint8_t* errorCode)
       return false;
     }
     STMPWMTimer::debug();
+    encoderManager.setDebounceBits(6);
     // Setup encoders
-    encoderManager.setDebounceBits(4);
     if(!encoderManager.addEncoder(ENCODER_PIN_1)) 
     {
       *errorCode = 3;
@@ -694,7 +714,7 @@ bool initAllHardware(uint8_t* errorCode)
     // Debug info    
 
 
-    // encoderManager.setDebounceBits(6);
+    encoderManager.setDebounceBits(6);
     // Start polling at 10kHz (10µs intervals)
     if(!encoderManager.begin(5000, TIM2)) {
       Serial.println("Encoder manager failed");

@@ -180,19 +180,19 @@ void AHRS::update()
     // ---- F. GET FILTER OUTPUTS ----
     FusionQuaternion quat = FusionAhrsGetQuaternion(&ahrsFilter);
     FusionEuler euler = FusionQuaternionToEuler(quat);
-
+    // Serial.printf("AHRS raw: roll=%.2f, pitch=%.2f, yaw=%.2f\n", euler.angle.roll, euler.angle.pitch, euler.angle.yaw);
     // --- CRITICAL SECTION: update shared members ---
     
     bool accelIgnored = false;
-    if (xSemaphoreTake(dataMutex, pdMS_TO_TICKS(100)) == pdTRUE) {
+    if (xSemaphoreTake(dataMutex, 0) == pdTRUE) {
         // dataNotfetched = false;
-        roll = -(euler.angle.roll);
+        roll = (euler.angle.roll);
         pitch = euler.angle.pitch;
         yaw = -(euler.angle.yaw);
 
 
-        gx_dps = gx_dps;
-        gz_dps = gz_dps;
+        // gx_dps = -gx_dps;
+        gz_dps = -gz_dps;
 
         yawRate = gz_dps;   // filtered yaw rate        
         accelFiltered[0] = ax_g;
@@ -226,13 +226,11 @@ void AHRS::update()
 
 
 // --- Getters 
-
-
 void AHRS::getAccel(float accelData[3]) const {
     // --- CRITICAL SECTION: update shared members ---
     
     // bool dataNotfetched = true;
-    if (xSemaphoreTake(dataMutex, pdMS_TO_TICKS(100)) == pdTRUE) {
+    if (xSemaphoreTake(dataMutex, 0) == pdTRUE) {
         accelData[0] = accelFiltered[0];
         accelData[1] = accelFiltered[1];
         accelData[2] = accelFiltered[2];
@@ -247,10 +245,8 @@ void AHRS::getGyro(float gyroData[3]) const {
     // --- CRITICAL SECTION: update shared members ---
     
     // bool dataNotfetched = true;
-    if (xSemaphoreTake(dataMutex, pdMS_TO_TICKS(100)) == pdTRUE) {
+    if (xSemaphoreTake(dataMutex, 0) == pdTRUE) {
         // dataNotfetched = false;
-        
-        
         gyroData[0] = gyroFiltered[0];
         gyroData[1] = gyroFiltered[1];
         gyroData[2] = gyroFiltered[2];
@@ -262,66 +258,73 @@ void AHRS::getGyro(float gyroData[3]) const {
 }
 float AHRS::getRoll() const {
     float val;
+    static float lastValidValue = 0.0f;
     // bool dataNotfetched = true;
-    if (xSemaphoreTake(dataMutex, pdMS_TO_TICKS(100)) == pdTRUE) {
+    if (xSemaphoreTake(dataMutex, 0) == pdTRUE) {
         // dataNotfetched = false;
-        
         val = roll;
+        lastValidValue = val;
         xSemaphoreGive(dataMutex);
     } else {
         // Serial.println("wasn't able to fetch data.");
-        val = 0.0f; // fallback, should not happen
+        val = lastValidValue; // fallback, should not happen
     }
     return val;
 }
 
 float AHRS::getPitch() const {
     float val;
+    static float lastValidValue = 0.0f;
     // bool dataNotfetched = true;
-    if (xSemaphoreTake(dataMutex, pdMS_TO_TICKS(100)) == pdTRUE) {
+    if (xSemaphoreTake(dataMutex, 0) == pdTRUE) {
         // dataNotfetched = false;
         
         val = pitch;
+        lastValidValue = val;
         xSemaphoreGive(dataMutex);
     } else {
         // Serial.println("wasn't able to fetch data.");
-        val = 0.0f;
+        val = lastValidValue;
     }
     return val;
 }
 
 float AHRS::getYaw() const {
     float val;
+    static float lastValidValue = 0.0f;
     // bool dataNotfetched = true;
-    if (xSemaphoreTake(dataMutex, pdMS_TO_TICKS(100)) == pdTRUE) {
+    if (xSemaphoreTake(dataMutex, 0) == pdTRUE) {
         // dataNotfetched = false;
         
         val = yaw;
+        lastValidValue = val;
         xSemaphoreGive(dataMutex);
     } else {
         // Serial.println("wasn't able to fetch data.");
-        val = 0.0f;
+        val = lastValidValue;
     }
     return val;
 }
 
 float AHRS::getYawRate() const {
     float val;
+    static float lastValidValue = 0.0f;
     // bool dataNotfetched = true;
-    if (xSemaphoreTake(dataMutex, pdMS_TO_TICKS(100)) == pdTRUE) {
+    if (xSemaphoreTake(dataMutex, 0) == pdTRUE) {
         // dataNotfetched = false;
         val = yawRate;
+        lastValidValue = val;
         xSemaphoreGive(dataMutex);
     } else {
         // Serial.println("wasn't able to fetch data.");
-        val = 0.0f;
+        val = lastValidValue;
     }
     return val;
 }
 
 void AHRS::getLinearAcceleration(float &x, float &y, float &z) const {
     // bool dataNotfetched = true;
-    if (xSemaphoreTake(dataMutex, pdMS_TO_TICKS(100)) == pdTRUE) {
+    if (xSemaphoreTake(dataMutex, 0) == pdTRUE) {
         // dataNotfetched = false;
         
         x = linearAccBody[0];
