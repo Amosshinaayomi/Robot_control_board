@@ -7,6 +7,7 @@
 #include <Fusion.h>
 #include <FreeRTOS.h>
 #include <semphr.h>   // for SemaphoreHandle_t
+#include <EEPROM.h>
 
 typedef struct {
     unsigned long timestamp_ms;  // Millisecond timestamp
@@ -33,7 +34,22 @@ typedef struct {
 } pose_packet_t;
 #pragma pack()
 
+typedef struct  {
+    float gyroBias[3];      // from AHRS (deg/s)
+    float accelBias[3];     // from AHRS (m/s^2 or g)
+    float hardIronOffset[3];    // hard iron offsets (uT)
+    int16_t magXMin, magXMax;  // raw counts
+    int16_t magYMin, magYMax;
+    int16_t magZMin, magZMax;
+    float softIronmatrix[3][3];   // soft iron matrix (3x3)
+    uint16_t magic;         // e.g., 0x5A5A to indicate valid data
+    uint16_t checksum;      // simple XOR of all previous bytes
+} CalibrationData_t;
+
 void printAHRSPacket(motionSensorPacket_t data);
+void printPose(const pose_packet_t &pose);
+void sendVisualizationData(motionSensorPacket_t data);
+
 
 class AHRS {
     public:
@@ -123,3 +139,5 @@ class AHRS {
 
 
  };
+
+

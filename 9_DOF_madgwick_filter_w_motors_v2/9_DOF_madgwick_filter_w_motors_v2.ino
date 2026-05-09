@@ -75,7 +75,7 @@ float originalGyroBias[3] = {0, 0, 0};
 float magRawMin[3] = {30000, 30000, 30000};
 float magRawMax[3] = {-30000, -30000, -30000};
 unsigned long lastDynamicUpdate = 0;
-const unsigned long DYNAMIC_UPDATE_PERIOD = 60000; // 60 seconds
+const unsigned long DYNAMIC_UPDATE_PERIOD = 100; // 60 seconds
 
 // Temperature variables
 float referenceTemperature = 25.0f;
@@ -154,7 +154,7 @@ void analog_turn_r(int dutyCycle);
 void setup() {
   // put your setup code here, to run once:
     Serial.begin(115200);
-    while(!Serial) {delay(50);}
+    // while(!Serial) {delay(50);}
     bool initMotors = initMotorDrivers();
     if(!initMotors){
         Serial.println("Motor  driver initialization failed");
@@ -287,11 +287,11 @@ void setup() {
     
     // ---- C. CONFIGURE FUSION AHRS SETTINGS ----
     FusionAhrsSettings settings;
-    settings.gain = 0.4f;               // Slightly higher than default 0.5 for better drift correction on a robot
-    settings.accelerationRejection = 8.0f; // Degrees. Lower threshold for a robot that may accelerate smoothly.
+    settings.gain = 0.5f;               // Slightly higher than default 0.5 for better drift correction on a robot
+    settings.accelerationRejection = 20.0f; // Degrees. Lower threshold for a robot that may accelerate smoothly.
     settings.gyroscopeRange = 500.0f;   // MUST match the dps setting above for correct over-range detection
-    settings.recoveryTriggerPeriod = 5 * 800; // 5 seconds in samples (using 800Hz accel ODR)
-    settings.magneticRejection = 15.0f;
+    settings.recoveryTriggerPeriod = 1 * 200; // 1 seconds in samples (using 400hz update rate)
+    settings.magneticRejection = 30.0f;
     // Choose your coordinate convention:
     // - NWU: X=North, Y=West, Z=Up (Common for robotics)
     // - ENU: X=East, Y=North, Z=Up (Common for aviation)
@@ -327,24 +327,24 @@ void loop() {
     }
     
     // === TEMPERATURE READING (every 500ms) ===
-    static unsigned long lastTempRead = 0;
-    if (millis() - lastTempRead > 500) {
-        if (temperatureCompEnabled) {
-            float newTemp;
-            if (imu.getTemperature(&newTemp)) {
-                static float tempHistory[3] = {25.0f, 25.0f, 25.0f};
-                static int tempIndex = 0;
+    // static unsigned long lastTempRead = 0;
+    // if (millis() - lastTempRead > 500) {
+    //     if (temperatureCompEnabled) {
+    //         float newTemp;
+    //         if (imu.getTemperature(&newTemp)) {
+    //             static float tempHistory[3] = {25.0f, 25.0f, 25.0f};
+    //             static int tempIndex = 0;
                 
-                tempHistory[tempIndex] = newTemp;
-                tempIndex = (tempIndex + 1) % 3;
-                currentTemperature = (tempHistory[0] + tempHistory[1] + tempHistory[2]) / 3.0f;
+    //             tempHistory[tempIndex] = newTemp;
+    //             tempIndex = (tempIndex + 1) % 3;
+    //             currentTemperature = (tempHistory[0] + tempHistory[1] + tempHistory[2]) / 3.0f;
                 
-                const float gyroScale = imu.getGyroScaleDps();
-                applyTemperatureCompensation(currentTemperature, gyroScale);
-            }
-        }
-        lastTempRead = millis();
-    }
+    //             const float gyroScale = imu.getGyroScaleDps();
+    //             applyTemperatureCompensation(currentTemperature, gyroScale);
+    //         }
+    //     }
+    //     lastTempRead = millis();
+    // }
     
 
     // ---- B. READ RAW SENSOR DATA ----
@@ -447,7 +447,7 @@ void loop() {
 
 
     // ---- H. PERIODIC OUTPUT ----
-    if(millis() - last_print_millis >= 300) {
+    if(millis() - last_print_millis >= 20) {
         // Invert gyro axes for display (if needed)
         // printIMUPacket(imuData);
         sendVisualizationData(imuData);
@@ -459,9 +459,12 @@ void loop() {
     if (states.accelerometerIgnored) {
         Serial.println("[Warning] High Acceleration - Accel data ignored.");
     }
+    if(states.magnetometerIgnored) {
+        Serial.println("mag cel data ignored.");
+    }
 
    // ----- Apply dynamic hard-iron updates (low‑pass filtered) -----
-    applyDynamicHardIron();
+    // applyDynamicHardIron();
 
     // Control loop rate
     delay(2);
@@ -562,7 +565,10 @@ void updateDynamicHardIron(float rawX, float rawY, float rawZ) {
 }
 
 void applyDynamicHardIron() {
+
+
     if (millis() - lastDynamicUpdate < DYNAMIC_UPDATE_PERIOD) return;
+
     lastDynamicUpdate = millis();
 
     // Require sufficient range (at least 0.3 Gauss) to trust estimate
@@ -570,11 +576,11 @@ void applyDynamicHardIron() {
     float rangeY = magRawMax[1] - magRawMin[1];
     if (rangeX < 0.3 || rangeY < 0.3) {
         // Reset min/max to avoid stale data
-        // magRawMin[0] = magRawMin[1] = magRawMin[2] = 30000;
-        // magRawMax[0] = magRawMax[1] = magRawMax[2] = -30000;
+        magRawMin[0] = magRawMin[1] = magRawMin[2] = 30000;
+        magRawMax[0] = magRawMax[1] = magRawMax[2] = -30000;
         return;
     }
-
+    Serial.println("Applying dynamic hardIron calibration");
     // Estimate new hard-iron offset (in Gauss, same units as raw)
     float newOffX = (magRawMax[0] + magRawMin[0]) / 2.0f;
     float newOffY = (magRawMax[1] + magRawMin[1]) / 2.0f;

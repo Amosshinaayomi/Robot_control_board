@@ -46,17 +46,17 @@ bool AHRS::begin() {
 
     // Set Output Data Rates (ODR)
     imu.setAccelRate(0x0B); // 800Hz - High rate for responsive correction
-    imu.setGyroRate(0x0A);  // 400Hz - Can be slightly lower than accelerometer
+    imu.setGyroRate(0x0B);  // 400Hz - Can be slightly lower than accelerometer
 
     // Check if gyro is in normal mode (required for temp sensor at 100Hz)
-    if (imu.isGyroInNormalMode()) {
-        Serial.println("Gyro in normal mode - Temperature sensor ready.");
-        temperatureCompEnabled = true;
-    } else {
-        Serial.println("WARNING: Gyro not in normal mode - temperature sensor limited.");
-        temperatureCompEnabled = false;
-    }
-    delay(50);
+    // if (imu.isGyroInNormalMode()) {
+    //     Serial.println("Gyro in normal mode - Temperature sensor ready.");
+    //     temperatureCompEnabled = true;
+    // } else {
+    //     Serial.println("WARNING: Gyro not in normal mode - temperature sensor limited.");
+    //     temperatureCompEnabled = false;
+    // }
+    // delay(50);
     // ---- B. PERFORM STARTUP CALIBRATION ----
     // calibrateIMU();
 
@@ -94,10 +94,11 @@ bool AHRS::begin() {
 
     // ---- C. CONFIGURE FUSION AHRS SETTINGS ----
     FusionAhrsSettings settings;
-    settings.gain = 0.5f;               // Slightly higher than default 0.5 for better drift correction on a robot
-    settings.accelerationRejection = 8.0f; // Degrees. Lower threshold for a robot that may accelerate smoothly.
+    settings.gain = 0.7f;  //0.75              // Slightly higher than default 0.5 for better drift correction on a robot
+    settings.accelerationRejection = 13.0f; // Degrees. Lower threshold for a robot that may accelerate smoothly.
     settings.gyroscopeRange = 500.0f;   // MUST match the dps setting above for correct over-range detection
-    settings.recoveryTriggerPeriod = 5 * 800; // 5 seconds in samples (using 800Hz accel ODR)
+    settings.recoveryTriggerPeriod = 150; // 5 seconds in samples (using 600 Hz update rate)
+    settings.magneticRejection = 20.0f;
 
     // Choose your coordinate convention:
     // - NWU: X=North, Y=West, Z=Up (Common for robotics)
@@ -112,7 +113,7 @@ bool AHRS::begin() {
 
     // ---- D. INITIALIZE GYROSCOPE OFFSET CORRECTION ----
     // This runs alongside the AHRS to auto-calibrate the gyro bias during operation.
-    FusionOffsetInitialise(&offsetFilter, 400); // Sample rate must match your gyro ODR (400Hz).
+    FusionOffsetInitialise(&offsetFilter, 800); // Sample rate must match your gyro ODR (400Hz).
 
     lastUpdateMicros = micros();
 
@@ -131,24 +132,24 @@ void AHRS::update()
     }
     
     // === TEMPERATURE READING (every 500ms) ===
-    static unsigned long lastTempRead = 0;
-    if (millis() - lastTempRead > 500) {
-        if (temperatureCompEnabled) {
-            float newTemp;
-            if (imu.getTemperature(&newTemp)) {
-                static float tempHistory[3] = {25.0f, 25.0f, 25.0f};
-                static int tempIndex = 0;
+    // static unsigned long lastTempRead = 0;
+    // if (millis() - lastTempRead > 500) {
+    //     if (temperatureCompEnabled) {
+    //         float newTemp;
+    //         if (imu.getTemperature(&newTemp)) {
+    //             static float tempHistory[3] = {25.0f, 25.0f, 25.0f};
+    //             static int tempIndex = 0;
                 
-                tempHistory[tempIndex] = newTemp;
-                tempIndex = (tempIndex + 1) % 3;
-                currentTemperature = (tempHistory[0] + tempHistory[1] + tempHistory[2]) / 3.0f;
+    //             tempHistory[tempIndex] = newTemp;
+    //             tempIndex = (tempIndex + 1) % 3;
+    //             currentTemperature = (tempHistory[0] + tempHistory[1] + tempHistory[2]) / 3.0f;
                 
-                const float gyroScale = imu.getGyroScaleDps();
-                applyTemperatureCompensation(currentTemperature, gyroScale);
-            }
-        }
-        lastTempRead = millis();
-    }
+    //             const float gyroScale = imu.getGyroScaleDps();
+    //             applyTemperatureCompensation(currentTemperature, gyroScale);
+    //         }
+    //     }
+    //     lastTempRead = millis();
+    // }
     
     // ---- B. READ RAW SENSOR DATA ----
     int16_t axRaw, ayRaw, azRaw, gxRaw, gyRaw, gzRaw;
@@ -241,7 +242,6 @@ void AHRS::update()
 void AHRS::getAccel(float accelData[3]) const {
     // --- CRITICAL SECTION: update shared members ---
     
-    // bool dataNotfetched = true;
     if (xSemaphoreTake(dataMutex, 0) == pdTRUE) {
         accelData[0] = accelFiltered[0];
         accelData[1] = accelFiltered[1];
@@ -256,7 +256,6 @@ void AHRS::getAccel(float accelData[3]) const {
 void AHRS::getGyro(float gyroData[3]) const {
     // --- CRITICAL SECTION: update shared members ---
     
-    // bool dataNotfetched = true;
     if (xSemaphoreTake(dataMutex, 0) == pdTRUE) {
         // dataNotfetched = false;
         gyroData[0] = gyroFiltered[0];
@@ -271,7 +270,7 @@ void AHRS::getGyro(float gyroData[3]) const {
 float AHRS::getRoll() const {
     float val;
     static float lastValidValue = 0.0f;
-    // bool dataNotfetched = true;
+    
     if (xSemaphoreTake(dataMutex, 0) == pdTRUE) {
         // dataNotfetched = false;
         val = roll;
@@ -287,7 +286,7 @@ float AHRS::getRoll() const {
 float AHRS::getPitch() const {
     float val;
     static float lastValidValue = 0.0f;
-    // bool dataNotfetched = true;
+    
     if (xSemaphoreTake(dataMutex, 0) == pdTRUE) {
         // dataNotfetched = false;
         
@@ -304,7 +303,7 @@ float AHRS::getPitch() const {
 float AHRS::getYaw() const {
     float val;
     static float lastValidValue = 0.0f;
-    // bool dataNotfetched = true;
+    
     if (xSemaphoreTake(dataMutex, 0) == pdTRUE) {
         // dataNotfetched = false;
         
@@ -321,7 +320,7 @@ float AHRS::getYaw() const {
 float AHRS::getYawRate() const {
     float val;
     static float lastValidValue = 0.0f;
-    // bool dataNotfetched = true;
+    
     if (xSemaphoreTake(dataMutex, 0) == pdTRUE) {
         // dataNotfetched = false;
         val = yawRate;
@@ -335,7 +334,6 @@ float AHRS::getYawRate() const {
 }
 
 void AHRS::getLinearAcceleration(float &x, float &y, float &z) const {
-    // bool dataNotfetched = true;
     if (xSemaphoreTake(dataMutex, 0) == pdTRUE) {
         // dataNotfetched = false;
         
@@ -425,4 +423,19 @@ void printAHRSPacket(motionSensorPacket_t data)
     Serial.print("YawRate: "); Serial.println(data.yawRate);
     Serial.printf("Front Left side encoder tick is %i\nFront right side encoder tick is %i\nBack Left side encoder tick is %i\nBack right side encoder tick is %i\n",data.encoder_ticks[0], data.encoder_ticks[1], data.encoder_ticks[2], data.encoder_ticks[3]);  
     Serial.println();    
+}
+
+
+void sendVisualizationData(motionSensorPacket_t data)
+{
+    Serial.print("PITCH:"); Serial.print(data.pitch);
+    Serial.print(",ROLL:"); Serial.print(data.roll);
+    Serial.print(",YAW:"); Serial.println(data.yaw);       
+}
+
+void printPose(const pose_packet_t &pose) {
+    Serial.printf("Pose: t=%lu, x=%.3f m, y=%.3f m, theta=%.3f rad (%.1f deg), "
+                  "v_lin=%.3f m/s, v_ang=%.3f rad/s, roll=%.2f, pitch=%.2f\n",
+                  pose.timestamp_ms, pose.x, pose.y, pose.theta, pose.theta * RAD_TO_DEG,
+                  pose.v_linear, pose.v_angular, pose.roll, pose.pitch);
 }

@@ -63,6 +63,9 @@ volatile float speedTestRightVoltage = 0;
 SemaphoreHandle_t speedTestSemaphore;
 
 
+pose_packet_t robotPose;
+SemaphoreHandle_t poseMutex;
+
 
 bool initAllHardware(uint8_t* errorCode);
 void calibrateMagnetometer2D(int duration);
@@ -234,7 +237,8 @@ void commsTask(void *parameter) {
       // Serial.println("AHRS Data sent succesfully");
     }
 
-    vTaskDelayUntil(&lastWake, period);
+    // vTaskDelay(period);
+     vTaskDelayUntil(&lastWake, period);
   }
 }
 
@@ -243,18 +247,20 @@ void ahrsTask(void *pvParameters) {
   TickType_t lastWake = xTaskGetTickCount();
   const TickType_t period = pdMS_TO_TICKS(2.5); 
   for(;;) {
-    if (!systemRunning) {
-        vTaskDelay(pdMS_TO_TICKS(10));
+    if (!systemRunning || calibrationRequested) {
+        lastWake = xTaskGetTickCount();
+        vTaskDelay(pdMS_TO_TICKS(5));
         continue;
     }
-    if (calibrationRequested) {
-        Serial.println("calibration is on going");
-        vTaskDelay(pdMS_TO_TICKS(10));
-        continue;
-    }
+    // if (calibrationRequested) {
+    //     Serial.println("calibration is on going");
+    //     vTaskDelay(pdMS_TO_TICKS(5));
+    //     continue;
+    // }
     ahrs.update();
     ahrsTaskHertCount++;
-    vTaskDelayUntil(&lastWake, period);  
+    // vTaskDelay(period);
+     vTaskDelayUntil(&lastWake, period);  
   
   }
 }
@@ -265,7 +271,7 @@ void ahrsCalibrationTask(void *pvParameters) {
     calibrationRequested = true;
     vTaskDelay(10 / portTICK_PERIOD_MS);    
     while (BATTERY_VOLTAGE < 9.0f) {
-        vTaskDelay(pdMS_TO_TICKS(100));
+        vTaskDelay(pdMS_TO_TICKS(50));
     }
 
 
@@ -274,25 +280,87 @@ void ahrsCalibrationTask(void *pvParameters) {
     Serial.println("IMU calibration done. Starting 2D mag calibration...");
     calibrateMagnetometer2D(13000); // your existing function
     Serial.println("Magnetometer calibration done.");
-    // calibrated = true;
     Serial.println("Calibration complete. Other tasks will now start.");
     calibrationRequested = false;
     calibrated = true;
     Serial.printf("calibrationRequest is %i\n", calibrationRequested);
     Serial.printf("calibrated is %i\n", calibrated);
-    vTaskDelay(10 / portTICK_PERIOD_MS);   
+    // vTaskDelay(10 / portTICK_PERIOD_MS);   
+    delay(300);
     // Suspend or delete itself
     vTaskSuspend(NULL);
 }
 
-// Motion Control Task: runs at 50 Hz (20 ms)
+
+void motionSensorTask(void *pvParameters) 
+{
+
+  Serial.println("Motion sensor task started");
+  TickType_t lastWake = xTaskGetTickCount();
+  const TickType_t period = pdMS_TO_TICKS(5); 
+  for(;;)
+  {
+    if (!systemRunning || calibrationRequested) 
+    {
+        // Serial.printf("system flag is %i, calibrated flag is %i\n", systemRunning, calibrated);
+        // Serial.println("waiting for calibration or system flag motionsensor task");
+        lastWake = xTaskGetTickCount();
+        vTaskDelay(pdMS_TO_TICKS(5));
+        continue;
+    }
+
+    // if (calibrationRequested) {
+    //     Serial.println("calibration is on going");
+    //     vTaskDelay(pdMS_TO_TICKS(5));
+    //     continue;
+    // }
+    // Serial.println("sensor task");
+    // time stamp
+    motionSensorPacket_t localData;
+    localData.timestamp_ms = millis();
+    // orientation
+    localData.roll = ahrs.getRoll();
+    localData.roll = ahrs.getRoll();
+    localData.pitch = ahrs.getPitch();
+    localData.yaw = ahrs.getYaw();
+
+    localData.encoder_ticks[0] = encoderManager.getTicks(0);
+    // Serial.printf("encoder 0 is %i\n", localData.encoder_ticks[0]);
+    localData.encoder_ticks[1] = encoderManager.getTicks(1);
+    // Serial.printf("encoder 1 is %i\n", localData.encoder_ticks[1]);
+    localData.encoder_ticks[2] = encoderManager.getTicks(2);
+    // Serial.printf("encoder 2 is %i\n", localData.encoder_ticks[2]);
+    localData.encoder_ticks[3] = encoderManager.getTicks(3);
+    // Serial.printf("encoder 3 is %i\n", localData.encoder_ticks[3]);
+    localData.yawRate = ahrs.getYawRate();
+    // Accelerometer and gyro
+    ahrs.getAccel(localData.accel_g); 
+    ahrs.getGyro(localData.gyro_dps);   
+
+    // Publish to shared variable with mutex
+    if (xSemaphoreTake(ahrsMutex, pdMS_TO_TICKS(5)) == pdTRUE) {
+        ahrsData = localData;
+        xSemaphoreGive(ahrsMutex);
+    } else {
+        Serial.println("AHRS mutex timeout!");
+        continue;
+    }
+
+
+    // vTaskDelay(period);
+     vTaskDelayUntil(&lastWake, period);  
+  }
+}
+
+// Motion Control Task: runs at 20 Hz (20 ms)
 // quantization issue
 void motionControllerTask(void *pvParameters) {
+    uint8_t task_period = 50;
     TickType_t lastWake = xTaskGetTickCount();
-    const TickType_t period = pdMS_TO_TICKS(50); // 50 Hz
-    CONTROL_DT = period / 1000.0;
-    long prevTimestamp_ms = 0;
-    float dt = 0.0f;
+    const TickType_t period = pdMS_TO_TICKS(task_period); // 20 Hz
+    CONTROL_DT = task_period / 1000.0f;
+    static long prevTimestamp_ms = 0;
+    static float dt = 0.0f;
 
     motionController.setStraight(0.3f);
     // motionController.setTargetVelocity(0.3, 3);
@@ -301,23 +369,24 @@ void motionControllerTask(void *pvParameters) {
     // motionController.setTargetVelocity(0.4f, 3.0f); 
 
     for (;;) {
-       if (!systemRunning) 
+       if (!systemRunning || calibrationRequested) 
        {
-          Serial.printf("system flag is %i, calibrated flag is %i\n", systemRunning, calibrated);
-          Serial.println("waiting for calibration or system flag motioncontrollertask task");
-          vTaskDelay(pdMS_TO_TICKS(10));
+          // Serial.printf("system flag is %i, calibrated flag is %i\n", systemRunning, calibrated);
+          // Serial.println("waiting for calibration or system flag motioncontrollertask task");
+          lastWake = xTaskGetTickCount();
+          vTaskDelay(pdMS_TO_TICKS(5));
           continue;
        }
 
         // Serial.println("motion controller is running");
         // Grab latest sensor data
         motionSensorPacket_t localData;
-        if (calibrationRequested) {
-            Serial.println("calibration is on going");
-            vTaskDelay(pdMS_TO_TICKS(10));
-            continue;
-        }
-        if (xSemaphoreTake(ahrsMutex, pdMS_TO_TICKS(10)) == pdTRUE) {
+        // if (calibrationRequested) {
+        //     Serial.println("calibration is on going");
+        //     vTaskDelay(pdMS_TO_TICKS(5));
+        //     continue;
+        // }
+        if (xSemaphoreTake(ahrsMutex, pdMS_TO_TICKS(5)) == pdTRUE) {
             localData = ahrsData;
             xSemaphoreGive(ahrsMutex);
         } else {
@@ -330,11 +399,7 @@ void motionControllerTask(void *pvParameters) {
         float rightTicksAvg = (localData.encoder_ticks[1] + localData.encoder_ticks[3]) / 2.0f;
         Serial.printf("lefTicksAvg is %.2f\n", leftTicksAvg);
         Serial.printf("rightTicksAvg is %.2f\n", rightTicksAvg);
-        dt = (localData.timestamp_ms - prevTimestamp_ms) /1000.0;
-        
-        if (dt < 0.001f) 
-          dt = 0.001; // fallback to nominal
-          Serial.printf("dt is lower than 0.001, dt is %.6f\n", dt);
+        dt = (localData.timestamp_ms - prevTimestamp_ms) /1000.0f;
         Serial.printf("dt is %.6f\n", dt);        
         
         float yawRad = localData.yaw * DEG_TO_RAD;
@@ -366,9 +431,90 @@ void motionControllerTask(void *pvParameters) {
         Serial.println();
         Serial.println();
         Serial.println();
+        // vTaskDelay(period);
+         vTaskDelayUntil(&lastWake, period);
+    }
+}
+
+
+void poseTask(void *pvParameters) {
+    TickType_t lastWake = xTaskGetTickCount();
+    const TickType_t period = pdMS_TO_TICKS(50); // 20 Hz
+
+    static float x = 0.0f, y = 0.0f, theta = 0.0f;
+    static float prevLeftTicks = 0.0f, prevRightTicks = 0.0f;
+    static long prevTimestamp_ms = 0;
+    static float dt = 0.0f;
+    for (;;) {
+        if (!systemRunning || calibrationRequested) {
+            vTaskDelay(pdMS_TO_TICKS(5));
+            continue;
+        }
+        motionSensorPacket_t localData;
+        // Get latest sensor data (from ahrsData)
+        if (xSemaphoreTake(ahrsMutex, pdMS_TO_TICKS(5)) == pdTRUE) {
+            localData = ahrsData;
+            xSemaphoreGive(ahrsMutex);
+        } else {
+            Serial.println("AHRS mutex timeout!");
+            continue;
+        }
+        Serial.println("pose task");
+        dt = (localData.timestamp_ms - prevTimestamp_ms) /1000.0;
+        Serial.printf("dt is %.6f\n", dt);        
+        prevTimestamp_ms = localData.timestamp_ms;
+
+        // Average left and right ticks (using 4 encoders)
+        float leftTicksAvg = (localData.encoder_ticks[0] + localData.encoder_ticks[2]) / 2.0f;
+        float rightTicksAvg = (localData.encoder_ticks[1] + localData.encoder_ticks[3]) / 2.0f;
+
+        // Compute delta distance and heading change from encoders
+        float deltaLeft = (leftTicksAvg - prevLeftTicks) / TICKS_PER_METER;
+        float deltaRight = (rightTicksAvg - prevRightTicks) / TICKS_PER_METER;
+        prevLeftTicks = leftTicksAvg;
+        prevRightTicks = rightTicksAvg;
+
+        float deltaDist = (deltaLeft + deltaRight) / 2.0f;
+        // Not using encoder heading because IMU is more accurate
+        // float deltaThetaEnc = (deltaRight - deltaLeft) / ROBOT_TRACK_WIDTH;
+
+        // Use IMU yaw for absolute heading
+        theta = localData.yaw * DEG_TO_RAD;
+
+        // Update x, y using forward displacement projected by heading
+        x += deltaDist * cosf(theta);
+        y += deltaDist * sinf(theta);
+
+        // Compute linear and angular velocities 
+        float v_linear = deltaDist / dt;            // m/s
+        float v_angular = (deltaRight - deltaLeft) / ROBOT_TRACK_WIDTH / dt; // rad/s (from encoders)
+
+        // Update global pose structure
+        pose_packet_t pose;
+        pose.timestamp_ms = millis();
+        pose.x = x;
+        pose.y = y;
+        pose.theta = theta * RAD_TO_DEG;
+        pose.v_linear = v_linear;
+        pose.v_angular = v_angular;
+        pose.roll = localData.roll;
+        pose.pitch = localData.pitch;
+        pose.yaw = theta;
+
+      if (xSemaphoreTake(poseMutex, pdMS_TO_TICKS(5)) == pdTRUE) {
+          robotPose = pose;
+          xSemaphoreGive(poseMutex);
+      } else {
+          Serial.println("AHRS mutex timeout!");
+          continue;
+      }
+
+        // Optional: send pose to ESP32 via UART (can be added later)
+
         vTaskDelayUntil(&lastWake, period);
     }
 }
+
 
 void motorTask(void *pvParameters)
 {
@@ -380,17 +526,17 @@ void motorTask(void *pvParameters)
   TickType_t lastWake = xTaskGetTickCount();
 
   for(;;) {
-    if(!systemRunning) {
-      vTaskDelay(pdMS_TO_TICKS(10));
-        Serial.printf("system flag is %i, calibrated flag is %i\n", systemRunning, calibrated);
-        Serial.println("waiting for calibration or system flag motorTask task");
+    if(!systemRunning || calibrationRequested) {
+      vTaskDelay(pdMS_TO_TICKS(5));
+        // Serial.printf("system flag is %i, calibrated flag is %i\n", systemRunning, calibrated);
+        // Serial.println("waiting for calibration or system flag motorTask task");
       continue;
     }
-    if (calibrationRequested) {
-        Serial.println("calibration is on going");
-        vTaskDelay(pdMS_TO_TICKS(10));
-        continue;
-    }
+    // if (calibrationRequested) {
+    //     Serial.println("calibration is on going");
+    //     vTaskDelay(pdMS_TO_TICKS(5));
+    //     continue;
+    // }
     // setLeftMotorsVoltage(6);
     // setRightMotorsVoltage(6); 
 
@@ -423,7 +569,7 @@ void motorTask(void *pvParameters)
       }     
     }
     motorTaskHertCount++;
-    vTaskDelayUntil(&lastWake, pdMS_TO_TICKS(50));
+    vTaskDelay(pdMS_TO_TICKS(50));
   }
 }
 
@@ -434,17 +580,17 @@ void speedTestTask(void *pvParameters) {
     // Example: start going straight at 0.5 m/s after 2 seconds
 
     for (;;) {
-        if (!systemRunning) {
-          vTaskDelay(pdMS_TO_TICKS(10));
-            Serial.printf("system flag is %i, calibrated flag is %i\n", systemRunning, calibrated);
-            Serial.println("waiting for calibration or system flag speed task");
+        if (!systemRunning || calibrationRequested) {
+          vTaskDelay(pdMS_TO_TICKS(5));
+            // Serial.printf("system flag is %i, calibrated flag is %i\n", systemRunning, calibrated);
+            // Serial.println("waiting for calibration or system flag speed task");
           continue;
         }    
-        if (calibrationRequested) {
-            Serial.println("calibration is on going");
-          vTaskDelay(pdMS_TO_TICKS(10));
-          continue;
-        }  
+        // if (calibrationRequested) {
+        //     Serial.println("calibration is on going");
+        //   vTaskDelay(pdMS_TO_TICKS(5));
+        //   continue;
+        // }  
         // Wait for start command
         xSemaphoreTake(speedTestSemaphore, portMAX_DELAY);
 
@@ -502,7 +648,7 @@ void speedTestTask(void *pvParameters) {
             //     speedTestRightVoltage = voltageSteps[i];
             //     Serial.printf("SET,RIGHT,%.2f\n", speedTestRightVoltage);
 
-            //     vTaskDelay(pdMS_TO_TICKS(100));
+            //     vTaskDelay(pdMS_TO_TICKS(50));
 
                 
             //     int32_t initLeft = (encoderManager.getTicks(0) + encoderManager.getTicks(2)) / 2;
@@ -661,86 +807,42 @@ void speedTestTask(void *pvParameters) {
     }
 }
 
-void motionSensorTask(void *pvParameters) 
-{
 
-  Serial.println("Motion sensor task started");
-  TickType_t lastWake = xTaskGetTickCount();
-  const TickType_t period = pdMS_TO_TICKS(5); 
-  for(;;)
-  {
-    if (!systemRunning) 
-    {
-        Serial.printf("system flag is %i, calibrated flag is %i\n", systemRunning, calibrated);
-        Serial.println("waiting for calibration or system flag motionsensor task");
-        vTaskDelay(pdMS_TO_TICKS(10));
-        continue;
-    }
-
-    if (calibrationRequested) {
-        Serial.println("calibration is on going");
-        vTaskDelay(pdMS_TO_TICKS(10));
-        continue;
-    }
-    Serial.println("sensor task");
-    // time stamp
-    motionSensorPacket_t localData;
-    localData.timestamp_ms = millis();
-    // orientation
-    localData.roll = ahrs.getRoll();
-    localData.roll = ahrs.getRoll();
-    localData.pitch = ahrs.getPitch();
-    localData.yaw = ahrs.getYaw();
-
-    localData.encoder_ticks[0] = encoderManager.getTicks(0);
-    // Serial.printf("encoder 0 is %i\n", localData.encoder_ticks[0]);
-    localData.encoder_ticks[1] = encoderManager.getTicks(1);
-    // Serial.printf("encoder 1 is %i\n", localData.encoder_ticks[1]);
-    localData.encoder_ticks[2] = encoderManager.getTicks(2);
-    // Serial.printf("encoder 2 is %i\n", localData.encoder_ticks[2]);
-    localData.encoder_ticks[3] = encoderManager.getTicks(3);
-    // Serial.printf("encoder 3 is %i\n", localData.encoder_ticks[3]);
-    localData.yawRate = ahrs.getYawRate();
-    // Accelerometer and gyro
-    ahrs.getAccel(localData.accel_g); 
-    ahrs.getGyro(localData.gyro_dps);   
-
-    // Publish to shared variable with mutex
-    if (xSemaphoreTake(ahrsMutex, pdMS_TO_TICKS(10)) == pdTRUE) {
-        ahrsData = localData;
-        xSemaphoreGive(ahrsMutex);
-    } else {
-        Serial.println("AHRS mutex timeout!");
-        continue;
-    }
-
-
-    vTaskDelayUntil(&lastWake, period);  
-  }
-}
 
 void printTask(void *pvParameters)
 {
   
   for(;;)
   {
-    if (!systemRunning) 
+    if (!systemRunning || calibrationRequested) 
     {
-        Serial.printf("system flag is %i, calibrated flag is %i\n", systemRunning, calibrated);
-        Serial.println("waiting for calibration or system flag print task");
-        vTaskDelay(pdMS_TO_TICKS(10));
-        continue;
-    }
-    if (calibrationRequested) {
-        Serial.println("calibration is on going");
-        vTaskDelay(pdMS_TO_TICKS(10));
+        // Serial.printf("system flag is %i, calibrated flag is %i\n", systemRunning, calibrated);
+        // Serial.println("waiting for calibration or system flag print task");
+        vTaskDelay(pdMS_TO_TICKS(5));
         continue;
     }
     motionSensorPacket_t localData;
-    xSemaphoreTake(ahrsMutex, portMAX_DELAY);
-    localData = ahrsData;
-    xSemaphoreGive(ahrsMutex);
+    if (xSemaphoreTake(ahrsMutex, pdMS_TO_TICKS(5)) == pdTRUE) {
+        localData = ahrsData;
+        xSemaphoreGive(ahrsMutex);        
+     
+    } else {
+        Serial.println("AHRS mutex timeout!");
+        continue;
+    }
     printAHRSPacket(localData);
+    sendVisualizationData(localData); 
+
+    pose_packet_t pose;
+    if (xSemaphoreTake(poseMutex, pdMS_TO_TICKS(5)) == pdTRUE) {
+        pose = robotPose;
+        xSemaphoreGive(poseMutex);
+
+    } else {
+        Serial.println("AHRS mutex timeout!");
+        continue;
+    }
+    printPose(pose);
     // Serial.print("Yaw: "); Serial.print(localData.yaw);
     // Serial.print("  Left ticks: "); Serial.print(localData.encoder_ticks[0] + localData.encoder_ticks[2]);
     // Serial.print("  Right ticks: "); Serial.println(localData.encoder_ticks[1] + localData.encoder_ticks[3]);  
@@ -773,6 +875,7 @@ void setup() {
   ahrsMutex = xSemaphoreCreateMutex();
   sysPwrMutex = xSemaphoreCreateMutex();
   speedTestSemaphore = xSemaphoreCreateBinary();
+  poseMutex = xSemaphoreCreateMutex();
 
   if (ahrsMutex == NULL) {
       Serial.println("Failed to create ahrsmutex");
@@ -784,6 +887,10 @@ void setup() {
   }
   if (speedTestSemaphore == NULL) {
       Serial.println("Failed to create speed test semaphore");
+      while (1);
+  }
+  if (poseMutex == NULL) {
+      Serial.println("Failed to create poseMutex");
       while (1);
   }
   // Serial.printf("hardware start millis %i\n", millis());
@@ -812,6 +919,7 @@ void setup() {
     xTaskCreate(printTask, "Print", 256, NULL, 2, &printHandle);
     xTaskCreate(speedTestTask, "speedTestTask", 2048, NULL, 2, NULL);
     xTaskCreate(ahrsCalibrationTask, "Calibration", 512, NULL, 5, NULL); // highest priority
+    xTaskCreate(poseTask, "Pose", 1024, NULL, 2, NULL);
     Serial.println("All tasks created, starting scheduler...");
     vTaskStartScheduler();
 
@@ -888,7 +996,9 @@ void calibrateMagnetometer2D(int duration) {
     unsigned long start = millis();
     while(millis() - start < (duration / 2.0)) {
         ahrs.mag.updateCalibration();
-        analog_turn_l(35);
+        // analog_turn_l(35);
+        setLeftMotorsVoltage(-5);
+        setRightMotorsVoltage(5);
         Serial.println("Running mag calibration");
         vTaskDelay(10 / portTICK_PERIOD_MS);
     }
@@ -896,7 +1006,9 @@ void calibrateMagnetometer2D(int duration) {
     start = millis();
     while(millis() - start < (duration / 2.0)) {
         ahrs.mag.updateCalibration();
-        analog_turn_r(35);
+        // analog_turn_r(35);
+        setLeftMotorsVoltage(5);
+        setRightMotorsVoltage(-5);
         Serial.println("Running mag calibration");
         vTaskDelay(10 / portTICK_PERIOD_MS);
     }
@@ -921,12 +1033,4 @@ void readModeFromSerial()
     }
     Serial.println("Please Enter the Character F or B or L or R to control the motors.");
   }
-}
-
-
-void sendVisualizationData(motionSensorPacket_t data)
-{
-    Serial.print("PITCH:"); Serial.print(data.pitch);
-    Serial.print(",ROLL:"); Serial.print(data.roll);
-    Serial.print(",YAW:"); Serial.println(data.yaw);       
 }
