@@ -126,8 +126,9 @@ void headingToCardinal(float heading) {
 
 // ==== 2. INITIALIZATION FUNCTION ====
 void setup() {
-  // put your setup code here, to run once:
+    // put your setup code here, to run once:
     Serial.begin(115200);
+    // delay(100);
     while(!Serial) {delay(50);}
     bool initMotors = initMotorDrivers();
     if(!initMotors){
@@ -151,7 +152,7 @@ void setup() {
 
     // Set Output Data Rates (ODR)
     imu.setAccelRate(0x0B); // 800Hz - High rate for responsive correction
-    imu.setGyroRate(0x0A);  // 400Hz - Can be slightly lower than accelerometer
+    imu.setGyroRate(0x0B);  // 400Hz - Can be slightly lower than accelerometer
 
     // Check if gyro is in normal mode (required for temp sensor at 100Hz)
     if (imu.isGyroInNormalMode()) {
@@ -174,10 +175,10 @@ void setup() {
     Serial.println("Calibrating Accelerometer (keep robot level)...");
     imu.calibrateAccel(300, &accelBias[0], &accelBias[1], &accelBias[2]);
 
-    // Try to read initial temperature
-    float temp;
-    int attempts = 0;
-    while (attempts < 10) {
+    // // Try to read initial temperature
+    // float temp;
+    // int attempts = 0;
+    // while (attempts < 10) {
         if (imu.getTemperature(&temp)) {
             referenceTemperature = temp;
             Serial.print("Reference temperature: ");
@@ -215,26 +216,26 @@ void setup() {
     true   // Invert Z (to make downward field negative)
 ); // due to magnetometer orientation relative to the IMU
 
-    // calibrateMagnetometer2D(12000);
+    calibrateMagnetometer2D(12000);
 
     // Optional: Set magnetic declination for your location (e.g., 10.5° East)
     // mag.setDeclination(10.5f);
 
-    if (attempts >= 10) {
-        // Serial.println("Could not read temperature sensor. Using default 25°C.");
-        referenceTemperature = 25.0f;
-        currentTemperature = 25.0f;
-    } else {
-        currentTemperature = referenceTemperature;
-    }
+    // if (attempts >= 10) {
+    //     // Serial.println("Could not read temperature sensor. Using default 25°C.");
+    //     referenceTemperature = 25.0f;
+    //     currentTemperature = 25.0f;
+    // } else {
+    //     currentTemperature = referenceTemperature;
+    // }
     
     // ---- C. CONFIGURE FUSION AHRS SETTINGS ----
     FusionAhrsSettings settings;
-    settings.gain = 0.4f;               // Slightly higher than default 0.5 for better drift correction on a robot
-    settings.accelerationRejection = 8.0f; // Degrees. Lower threshold for a robot that may accelerate smoothly.
+    settings.gain = 0.7f;  //0.75              // Slightly higher than default 0.5 for better drift correction on a robot
+    settings.accelerationRejection = 13.0f; // Degrees. Lower threshold for a robot that may accelerate smoothly.
     settings.gyroscopeRange = 500.0f;   // MUST match the dps setting above for correct over-range detection
-    settings.recoveryTriggerPeriod = 5 * 800; // 5 seconds in samples (using 800Hz accel ODR)
-    settings.magneticRejection = 15.0f;
+    settings.recoveryTriggerPeriod = 150; // 5 seconds in samples (using 00 Hz update rate)
+    settings.magneticRejection = 20.0f;
     // Choose your coordinate convention:
     // - NWU: X=North, Y=West, Z=Up (Common for robotics)
     // - ENU: X=East, Y=North, Z=Up (Common for aviation)
@@ -248,7 +249,7 @@ void setup() {
 
     // ---- D. INITIALIZE GYROSCOPE OFFSET CORRECTION ----
     // This runs alongside the AHRS to auto-calibrate the gyro bias during operation.
-    FusionOffsetInitialise(&offsetFilter, 400); // Sample rate must match your gyro ODR (400Hz).
+    FusionOffsetInitialise(&offsetFilter, 800); // Sample rate must match your gyro ODR (400Hz).
 
     previousMicros = micros();
     Serial.println("IMU and Fusion Library Initialized.");
@@ -258,6 +259,7 @@ long last_print_millis = millis();
 float currentVelX, currentVelY, currentVelZ, prevVelX, prevVelY, prevVelZ, posX, posY, posZ;
 
 // ==== 3. MAIN PROCESSING LOOP ====
+volatile unsigned int updateRate = 0;
 void loop() {
     // ---- A. TIMING ----
     unsigned long currentMicros = micros();
@@ -265,29 +267,29 @@ void loop() {
     previousMicros = currentMicros;
 
     // Safety check
-    if (deltaTime > 0.1f) {
-        return;
-    }
+    // if (deltaTime > 0.1f) {
+    //     return;
+    // }
     
-    // === TEMPERATURE READING (every 500ms) ===
-    static unsigned long lastTempRead = 0;
-    if (millis() - lastTempRead > 500) {
-        if (temperatureCompEnabled) {
-            float newTemp;
-            if (imu.getTemperature(&newTemp)) {
-                static float tempHistory[3] = {25.0f, 25.0f, 25.0f};
-                static int tempIndex = 0;
+    // // === TEMPERATURE READING (every 500ms) ===
+    // static unsigned long lastTempRead = 0;
+    // if (millis() - lastTempRead > 500) {
+    //     if (temperatureCompEnabled) {
+    //         float newTemp;
+    //         if (imu.getTemperature(&newTemp)) {
+    //             static float tempHistory[3] = {25.0f, 25.0f, 25.0f};
+    //             static int tempIndex = 0;
                 
-                tempHistory[tempIndex] = newTemp;
-                tempIndex = (tempIndex + 1) % 3;
-                currentTemperature = (tempHistory[0] + tempHistory[1] + tempHistory[2]) / 3.0f;
+    //             tempHistory[tempIndex] = newTemp;
+    //             tempIndex = (tempIndex + 1) % 3;
+    //             currentTemperature = (tempHistory[0] + tempHistory[1] + tempHistory[2]) / 3.0f;
                 
-                const float gyroScale = imu.getGyroScaleDps();
-                applyTemperatureCompensation(currentTemperature, gyroScale);
-            }
-        }
-        lastTempRead = millis();
-    }
+    //             const float gyroScale = imu.getGyroScaleDps();
+    //             applyTemperatureCompensation(currentTemperature, gyroScale);
+    //         }
+    //     }
+    //     lastTempRead = millis();
+    // }
     
 
     // ---- B. READ RAW SENSOR DATA ----
@@ -341,12 +343,12 @@ void loop() {
     }
     // ---- E. UPDATE THE AHRS FILTER ----
     if (magValid) {
-        FusionAhrsUpdate(&ahrsFilter, gyroscope, accelerometer, magnetometer, deltaTime);
-        // Serial.println("Using full 9DOF");
+            FusionAhrsUpdate(&ahrsFilter, gyroscope, accelerometer, magnetometer, deltaTime);
+            // Serial.println("Using full 9DOF");
     } else {
-        // Fallback to no-magnetometer update if magnetometer read fails
-        FusionAhrsUpdateNoMagnetometer(&ahrsFilter, gyroscope, accelerometer, deltaTime);
-        // Serial.println("Using 6DOF");
+            // Fallback to no-magnetometer update if magnetometer read fails
+            FusionAhrsUpdateNoMagnetometer(&ahrsFilter, gyroscope, accelerometer, deltaTime);
+            // Serial.println("Using 6DOF");
         }
 // FusionAhrsUpdateNoMagnetometer(&ahrsFilter, gyroscope, accelerometer, deltaTime);
 
@@ -383,10 +385,11 @@ void loop() {
 
 
     // ---- H. PERIODIC OUTPUT ----
-    if(millis() - last_print_millis >= 300) {
+    if(millis() - last_print_millis >= 50) {
         // Invert gyro axes for display (if needed)
-        // printIMUPacket(imuData);
+        printIMUPacket(imuData);
         sendVisualizationData(imuData);
+        Serial.printf("updateRate count is %i\n", updateRate);
         headingToCardinal(imuData.yaw);
         last_print_millis = millis();
     }
@@ -398,7 +401,10 @@ void loop() {
     }
 
     // Control loop rate
-    delay(5);
+    // delay(2);
+    updateRate++;
+    updateRate = updateRate % 500;
+    delayMicroseconds(2000);
 }
 
 void printIMUPacket(ImuDataPacket_t data)
