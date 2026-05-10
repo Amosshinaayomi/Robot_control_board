@@ -1,0 +1,10 @@
+{
+  "name": "EncoderManager",
+  "version": "1.0.0",
+  "description": "STM32 hardware timer-based encoder manager",
+  "keywords": "encoder, stm32, timer",
+  "authors": [{"name": "Amos Gbadegesin"}],
+  "license": "MIT",
+  "frameworks": "arduino",
+  "platforms": "ststm32"
+}

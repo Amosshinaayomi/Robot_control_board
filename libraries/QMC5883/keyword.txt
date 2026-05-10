@@ -1,0 +1,49 @@
+#######################################
+# Syntax Coloring Map for QMC5883
+#######################################
+
+#######################################
+# Datatypes (KEYWORD1)
+#######################################
+QMC5883	KEYWORD1
+
+#######################################
+# Methods and Functions (KEYWORD2)
+#######################################
+begin	KEYWORD2
+read	KEYWORD2
+readRaw	KEYWORD2
+readCalibrated	KEYWORD2
+getTrueHeading	KEYWORD2
+getHeadings	KEYWORD2
+getAllData	KEYWORD2
+setDeclination	KEYWORD2
+setOrientation	KEYWORD2
+setCustomOrientation	KEYWORD2
+startCalibration	KEYWORD2
+updateCalibration	KEYWORD2
+endCalibration	KEYWORD2
+isCalibrated	KEYWORD2
+softReset	KEYWORD2
+selfTest	KEYWORD2
+checkID	KEYWORD2
+
+#######################################
+# Constants (LITERAL1)
+#######################################
+MODE_STANDBY	LITERAL1
+MODE_NORMAL	LITERAL1
+MODE_SINGLE	LITERAL1
+MODE_CONTINUOUS	LITERAL1
+ODR_10Hz	LITERAL1
+ODR_50Hz	LITERAL1
+ODR_100Hz	LITERAL1
+ODR_200Hz	LITERAL1
+RNG_2G	LITERAL1
+RNG_8G	LITERAL1
+RNG_12G	LITERAL1
+RNG_30G	LITERAL1
+ORIENTATION_NORMAL	LITERAL1
+ORIENTATION_ROTATE_90	LITERAL1
+ORIENTATION_ROTATE_180	LITERAL1
+ORIENTATION_ROTATE_270	LITERAL1

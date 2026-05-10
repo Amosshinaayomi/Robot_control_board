@@ -1,0 +1,27 @@
+#######################################
+# Syntax Coloring Map For EncoderManager
+#######################################
+
+#######################################
+# Datatypes (KEYWORD1)
+#######################################
+EncoderManager	KEYWORD1
+
+#######################################
+# Methods and Functions (KEYWORD2) 
+#######################################
+addEncoder	KEYWORD2
+begin	KEYWORD2
+pollAll	KEYWORD2
+getTicks	KEYWORD2
+resetTicks	KEYWORD2
+resetAllTicks	KEYWORD2
+getEncoderCount	KEYWORD2
+getPin	KEYWORD2
+isInitialized	KEYWORD2
+printAllTicks	KEYWORD2
+printDebugInfo	KEYWORD2
+
+#######################################
+# Constants (LITERAL1)
+#######################################

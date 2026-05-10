@@ -1,0 +1,18 @@
+{
+  "name": "QMC5883",
+  "version": "1.0.0",
+  "description": "Arduino library for QMC5883 3-axis magnetometer with advanced calibration and orientation correction",
+  "keywords": "magnetometer, compass, qmc5883, sensor, imu, heading",
+  "authors": [
+    {
+      "name": "Amos Gbadegesin",
+      "email": "amosshinaayomi@gmail.com"
+
+    }
+  ],
+  "license": "MIT",
+  "homepage": "https://github.com/yourusername/QMC5883",
+  "frameworks": "arduino",
+  "platforms": "*",
+  "headers": "QMC5883.h"
+}
