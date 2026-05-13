@@ -27,7 +27,7 @@ const float KP_VEL = 0.1f;
 const float KI_VEL = 0.2f;
 const float KD_VEL = 0.0f;
 
-const float KP_HEADING = 1.3f;
+const float KP_HEADING = 2f;
 
 // PID gains for gyrorate heading compensation
 const float KP_OMEGA = 2.5; //started with 5 then 2, 2.7

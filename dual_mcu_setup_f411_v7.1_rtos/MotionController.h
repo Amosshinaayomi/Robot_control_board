@@ -109,11 +109,11 @@ public:
     // Main control update, to be called at fixed interval (dt seconds)
     void update(float leftTicksAvg, float rightTicksAvg, float yaw, float yawRate_radps, float dt, float *motorsVoltage) {
         // 1. Compute wheel speeds (ticks/s)
-        Serial.printf("prevleft tick is %f\n", prevLeft);
-        Serial.printf("prev right tick is %f\n", prevRight);   
+        // Serial.printf("prevleft tick is %f\n", prevLeft);
+        // Serial.printf("prev right tick is %f\n", prevRight);   
 
-        Serial.printf("absolute yaw is %.5f, degs: %.2f\n", yaw, yaw * RAD_TO_DEG);
-        Serial.printf("yawRate is %.5f\n", yawRate_radps);   
+        // Serial.printf("absolute yaw is %.5f, degs: %.2f\n", yaw, yaw * RAD_TO_DEG);
+        // Serial.printf("yawRate is %.5f\n", yawRate_radps);   
 
         float leftTickSpeed = (leftTicksAvg - prevLeft) / dt;
         float rightTickSpeed = (rightTicksAvg - prevRight) / dt;
@@ -137,7 +137,7 @@ public:
 
         leftTickSpeedF /= FILTER_WINDOW_SIZE;
         rightTickSpeedF /=FILTER_WINDOW_SIZE;
-        Serial.printf("leftTickSpeedF is %.f\nrightTickSpeedF is %.f\n", leftTickSpeedF, rightTickSpeedF); 
+        // Serial.printf("leftTickSpeedF is %.f\nrightTickSpeedF is %.f\n", leftTickSpeedF, rightTickSpeedF); 
         prevLeft = leftTicksAvg;
         prevRight = rightTicksAvg;
         
@@ -161,25 +161,25 @@ public:
         }
 
         float desiredOmega_dps = -(desiredOmega * RAD_TO_DEG);   // to deg/s
-        Serial.printf("desired correction Omega in degs is %.3f\n", desiredOmega_dps);
+        // Serial.printf("desired correction Omega in degs is %.3f\n", desiredOmega_dps);
         float ff_angular_volt_diff = getAngularFeedforwardVoltageDiff(desiredOmega_dps); 
-        Serial.printf("ffOmegaCorrection is %.2f\n", ff_angular_volt_diff);
+        // Serial.printf("ffOmegaCorrection is %.2f\n", ff_angular_volt_diff);
         int8_t sign = (ff_angular_volt_diff >= 0) ? 1 : -1;
 
         // Split voltage difference and add to motor commands (direct voltage feedforward)
         float left_angular_ff = sign * fabs(ff_angular_volt_diff) / 2.0f;
         float right_angular_ff = -sign * fabs(ff_angular_volt_diff) / 2.0f;
-        Serial.printf("angular_ff voltage correction for left motor is %.3f\n", left_angular_ff);
-        Serial.printf("angular_ff voltage correction for right motor is %.3f\n", right_angular_ff);
+        // Serial.printf("angular_ff voltage correction for left motor is %.3f\n", left_angular_ff);
+        // Serial.printf("angular_ff voltage correction for right motor is %.3f\n", right_angular_ff);
         // Inner angular velocity loop (PID on yaw rate)
         float omegaCorrection = _pidOmega.compute(desiredOmega, yawRate_radps);
         omegaCorrection= constrain(omegaCorrection, -MAX_OMEGA_RADPS,  MAX_OMEGA_RADPS); 
-        Serial.printf("omega correction is %.5f\n", omegaCorrection);
+        // Serial.printf("omega correction is %.5f\n", omegaCorrection);
         // 3. Desired side speeds from kinematics (m/s)
         float leftDesired_mps = _targetV - omegaCorrection * ROBOT_TRACK_WIDTH / 2.0f;
         float rightDesired_mps = _targetV + omegaCorrection * ROBOT_TRACK_WIDTH / 2.0f;
-        Serial.printf("leftDesired_mps is %f\n", leftDesired_mps);
-        Serial.printf("rightDesired_mps is %f\n", rightDesired_mps);
+        // Serial.printf("leftDesired_mps is %f\n", leftDesired_mps);
+        // Serial.printf("rightDesired_mps is %f\n", rightDesired_mps);
 
         // 4. Convert to desired ticks/s using encoder resolution
         float leftDesired = leftDesired_mps * TICKS_PER_METER;
@@ -187,17 +187,17 @@ public:
 
 
 
-        Serial.printf("current left speed(ticks/sec) is %f\n", leftTickSpeed);
-        Serial.printf("current right speed(ticks/sec) is %f\n", rightTickSpeed);
-        Serial.printf("leftDesired ticks_per_meter is %f\n", leftDesired);
-        Serial.printf("rightDesired ticks_per_meter is %f\n", rightDesired);
+        // Serial.printf("current left speed(ticks/sec) is %f\n", leftTickSpeed);
+        // Serial.printf("current right speed(ticks/sec) is %f\n", rightTickSpeed);
+        // Serial.printf("leftDesired ticks_per_meter is %f\n", leftDesired);
+        // Serial.printf("rightDesired ticks_per_meter is %f\n", rightDesired);
 
         float leftVelocity_mps = leftTickSpeedF / TICKS_PER_METER;
         float rightVelocity_mps = rightTickSpeedF / TICKS_PER_METER;
         float robotVelocity_mps = (leftVelocity_mps + rightVelocity_mps) / 2.0f;
-        Serial.printf("current left velocity(m/s) is %f\n", leftVelocity_mps);
-        Serial.printf("current right velocity(m/s) is %f\n", rightVelocity_mps);
-        Serial.printf("current robot velocity(m/s) is %f\n", robotVelocity_mps);
+        // Serial.printf("current left velocity(m/s) is %f\n", leftVelocity_mps);
+        // Serial.printf("current right velocity(m/s) is %f\n", rightVelocity_mps);
+        // Serial.printf("current robot velocity(m/s) is %f\n", robotVelocity_mps);
         
 
         // 5. Compute PID outputs (volts)
@@ -207,27 +207,24 @@ public:
         float leftFF = getFeedforwardVoltageLeft(leftDesired);
         float rightFF = getFeedforwardVoltageRight(rightDesired);
 
-        // float leftFF  = getFeedforwardVoltageLeft(leftDesired);
-        // float rightFF = getFeedforwardVoltageRight(rightDesired);
-
-        Serial.printf("left FF voltage is %.2f\n", leftFF);
-        Serial.printf("right FF voltage is %.2f\n", rightFF);
+        // Serial.printf("left FF voltage is %.2f\n", leftFF);
+        // Serial.printf("right FF voltage is %.2f\n", rightFF);
 
         float leftPIDout = _pidLeft.compute(leftDesired, leftTickSpeedF);
         float rightPIDout = _pidRight.compute(rightDesired, rightTickSpeedF);
-        Serial.printf("leftPIDout voltage is %.2f\n", leftPIDout);
-        Serial.printf("rightPIDout voltage is %.2f\n", rightPIDout);
+        // Serial.printf("leftPIDout voltage is %.2f\n", leftPIDout);
+        // Serial.printf("rightPIDout voltage is %.2f\n", rightPIDout);
 
         float leftCmd = leftFF + leftPIDout+ left_angular_ff;
         float rightCmd = rightFF + rightPIDout +  right_angular_ff;
-        Serial.printf("leftCmd before constrain is %f\n", leftCmd);
-        Serial.printf("rightCmd before constrain is %f\n", rightCmd);
+        // Serial.printf("leftCmd before constrain is %f\n", leftCmd);
+        // Serial.printf("rightCmd before constrain is %f\n", rightCmd);
 
         leftCmd = constrain(leftCmd, -MAX_MOTOR_VOLTAGE, MAX_MOTOR_VOLTAGE);
         rightCmd = constrain(rightCmd, -MAX_MOTOR_VOLTAGE, MAX_MOTOR_VOLTAGE);
 
-        Serial.printf("leftCmd after constrain is %f\n", leftCmd);
-        Serial.printf("rightCmd after constrain is %f\n", rightCmd);
+        // Serial.printf("leftCmd after constrain is %f\n", leftCmd);
+        // Serial.printf("rightCmd after constrain is %f\n", rightCmd);
 
         motorsVoltage[0] = leftCmd;
         motorsVoltage[1] = rightCmd;
