@@ -22,17 +22,13 @@ typedef struct {
     long encoder_ticks[4]; //encoder data
 } motionSensorPacket_t; // ahrs data packet
 
-#pragma pack(1)
+// Normal (natural alignment) for internal use
 typedef struct {
     uint32_t timestamp_ms;
-    float x;               // meters (east)
-    float y;               // meters (north)
-    float theta;           // radians (yaw)
-    float v_linear;        // m/s
-    float v_angular;       // rad/s
-    float roll, pitch, yaw; // yaw already in theta
+    float x; float y; float theta;
+    float v_linear; float v_angular;
+    float roll, pitch, yaw;
 } pose_packet_t;
-#pragma pack()
 
 typedef struct  {
     float gyroBias[3];      // from AHRS (deg/s)

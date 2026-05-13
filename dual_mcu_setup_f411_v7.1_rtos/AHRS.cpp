@@ -62,7 +62,7 @@ bool AHRS::begin() {
 
 
     // // Try to read initial temperature
-    readTemperature();
+    // readTemperature();
     // Mag initialization
     // Initialize QMC5883P magnetometer
     if (!mag.begin(SDA_PIN, SCL_PIN, i2cSpeed)) {
@@ -97,7 +97,7 @@ bool AHRS::begin() {
     settings.gain = 0.7f;  //0.75              // Slightly higher than default 0.5 for better drift correction on a robot
     settings.accelerationRejection = 13.0f; // Degrees. Lower threshold for a robot that may accelerate smoothly.
     settings.gyroscopeRange = 500.0f;   // MUST match the dps setting above for correct over-range detection
-    settings.recoveryTriggerPeriod = 150; // 5 seconds in samples (using 600 Hz update rate)
+    settings.recoveryTriggerPeriod = 100; // 5 seconds in samples (using 600 Hz update rate)
     settings.magneticRejection = 20.0f;
 
     // Choose your coordinate convention:
@@ -130,27 +130,6 @@ void AHRS::update()
     if (deltaTime > 0.1f) {
         return;
     }
-    
-    // === TEMPERATURE READING (every 500ms) ===
-    // static unsigned long lastTempRead = 0;
-    // if (millis() - lastTempRead > 500) {
-    //     if (temperatureCompEnabled) {
-    //         float newTemp;
-    //         if (imu.getTemperature(&newTemp)) {
-    //             static float tempHistory[3] = {25.0f, 25.0f, 25.0f};
-    //             static int tempIndex = 0;
-                
-    //             tempHistory[tempIndex] = newTemp;
-    //             tempIndex = (tempIndex + 1) % 3;
-    //             currentTemperature = (tempHistory[0] + tempHistory[1] + tempHistory[2]) / 3.0f;
-                
-    //             const float gyroScale = imu.getGyroScaleDps();
-    //             applyTemperatureCompensation(currentTemperature, gyroScale);
-    //         }
-    //     }
-    //     lastTempRead = millis();
-    // }
-    
     // ---- B. READ RAW SENSOR DATA ----
     int16_t axRaw, ayRaw, azRaw, gxRaw, gyRaw, gzRaw;
     if (!imu.getMotion6(&axRaw, &ayRaw, &azRaw, &gxRaw, &gyRaw, &gzRaw)) {
@@ -180,16 +159,35 @@ void AHRS::update()
     float gz_dps = gz_cal * gyroScale;
 
 
+
     // Create Fusion vectors
     FusionVector accelerometer = {ax_g, ay_g, az_g};
     FusionVector gyroscope = {gx_dps, gy_dps, gz_dps};
 
     // ---- D. UPDATE GYROSCOPE OFFSET CORRECTION ----
     gyroscope = FusionOffsetUpdate(&offsetFilter, gyroscope);
-
+    // ---- READ MAGNETOMETER ----
+    QMC5883::Data magData;
+    bool magValid = mag.readCalibrated(magData, QMC5883::RNG_8G);
+    FusionVector magnetometer;
+    // Serial.print("Raw X:"); Serial.print(magData.x);
+    // Serial.print(" Y:"); Serial.print(magData.y);
+    // Serial.print(" Z:"); Serial.println(magData.z);
+    if (magValid) {
+        // Convert Gauss to µT (1 Gauss = 100 µT)
+        magnetometer.axis.x = magData.x * 100.0f;
+        magnetometer.axis.y = magData.y * 100.0f;
+        magnetometer.axis.z = magData.z * 100.0f;
+    }
     // ---- E. UPDATE THE AHRS FILTER ----
-    FusionAhrsUpdateNoMagnetometer(&ahrsFilter, gyroscope, accelerometer, deltaTime);
-
+    if (magValid) {
+            FusionAhrsUpdate(&ahrsFilter, gyroscope, accelerometer, magnetometer, deltaTime);
+            // Serial.println("Using full 9DOF");
+    } else {
+        // Fallback to no-magnetometer update if magnetometer read fails
+        FusionAhrsUpdateNoMagnetometer(&ahrsFilter, gyroscope, accelerometer, deltaTime);
+        // Serial.println("Using 6DOF");
+    }
     // ---- F. GET FILTER OUTPUTS ----
     FusionQuaternion quat = FusionAhrsGetQuaternion(&ahrsFilter);
     FusionEuler euler = FusionQuaternionToEuler(quat);
@@ -216,7 +214,9 @@ void AHRS::update()
         gyroFiltered[1] = gy_dps;
         gyroFiltered[2] = gz_dps;
 
-        // Get linear acceleration in sensor frame
+        xSemaphoreGive(dataMutex);
+    }
+            // Get linear acceleration in sensor frame
         FusionVector linearAcc = FusionAhrsGetLinearAcceleration(&ahrsFilter);
         // linearAccBody[0] = linearAcc.axis.x;
         // linearAccBody[1] = linearAcc.axis.y;
@@ -231,9 +231,6 @@ void AHRS::update()
 
         // QMC5883::Data data;
         // float magnetic_heading, true_heading;
-
-        xSemaphoreGive(dataMutex);
-    }
         if (accelIgnored) Serial.println("[Warning] High Acceleration - Accel data ignored.");
 }
 
@@ -274,6 +271,9 @@ float AHRS::getRoll() const {
     if (xSemaphoreTake(dataMutex, 0) == pdTRUE) {
         // dataNotfetched = false;
         val = roll;
+        if(isnan(val)) {
+            val = lastValidValue;
+        }
         lastValidValue = val;
         xSemaphoreGive(dataMutex);
     } else {
@@ -289,8 +289,10 @@ float AHRS::getPitch() const {
     
     if (xSemaphoreTake(dataMutex, 0) == pdTRUE) {
         // dataNotfetched = false;
-        
         val = pitch;
+        if(isnan(val)) {
+            val = lastValidValue;
+        }
         lastValidValue = val;
         xSemaphoreGive(dataMutex);
     } else {
@@ -308,6 +310,9 @@ float AHRS::getYaw() const {
         // dataNotfetched = false;
         
         val = yaw;
+        if(isnan(val)) {
+            val = lastValidValue;
+        }
         lastValidValue = val;
         xSemaphoreGive(dataMutex);
     } else {
@@ -324,6 +329,9 @@ float AHRS::getYawRate() const {
     if (xSemaphoreTake(dataMutex, 0) == pdTRUE) {
         // dataNotfetched = false;
         val = yawRate;
+        if(isnan(val)) {
+            val = lastValidValue;
+        }
         lastValidValue = val;
         xSemaphoreGive(dataMutex);
     } else {
@@ -434,8 +442,32 @@ void sendVisualizationData(motionSensorPacket_t data)
 }
 
 void printPose(const pose_packet_t &pose) {
-    Serial.printf("Pose: t=%lu, x=%.3f m, y=%.3f m, theta=%.3f rad (%.1f deg), "
-                  "v_lin=%.3f m/s, v_ang=%.3f rad/s, roll=%.2f, pitch=%.2f\n",
-                  pose.timestamp_ms, pose.x, pose.y, pose.theta, pose.theta * RAD_TO_DEG,
-                  pose.v_linear, pose.v_angular, pose.roll, pose.pitch);
+    // Copy to align (though unpacked struct already aligned)
+    uint32_t ts = pose.timestamp_ms;
+    float x = pose.x;
+    float y = pose.y;
+    float theta = pose.theta;
+    float v_lin = pose.v_linear;
+    float v_ang = pose.v_angular;
+    float roll = pose.roll;
+    float pitch = pose.pitch;
+
+    Serial.print("Pose: t=");
+    Serial.print(ts);
+    Serial.print(", x=");
+    Serial.print(x, 3);
+    Serial.print(", y=");
+    Serial.print(y, 3);
+    Serial.print(", theta=");
+    Serial.print(theta, 3);
+    Serial.print(" (");
+    Serial.print(theta * RAD_TO_DEG, 1);
+    Serial.print("deg), v_lin=");
+    Serial.print(v_lin, 3);
+    Serial.print(", v_ang=");
+    Serial.print(v_ang, 3);
+    Serial.print(", roll=");
+    Serial.print(roll, 2);
+    Serial.print(", pitch=");
+    Serial.println(pitch, 2);
 }

@@ -64,6 +64,18 @@ typedef struct {
 } speed_test_log_t;
 #pragma pack()
 
+
+// Packed for serialization (send over UART)
+#pragma pack(1)
+typedef struct {
+    uint32_t timestamp_ms;
+    float x; float y; float theta;
+    float v_linear; float v_angular;
+    float roll, pitch, yaw;
+} pose_packet_packed_t;
+#pragma pack()
+
+
 enum commState {
   WAIT_START,
   WAIT_TYPE,

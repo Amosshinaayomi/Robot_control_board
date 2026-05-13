@@ -112,7 +112,7 @@ public:
         Serial.printf("prevleft tick is %f\n", prevLeft);
         Serial.printf("prev right tick is %f\n", prevRight);   
 
-        Serial.printf("absolute yaw is %.5f\n", yaw);
+        Serial.printf("absolute yaw is %.5f, degs: %.2f\n", yaw, yaw * RAD_TO_DEG);
         Serial.printf("yawRate is %.5f\n", yawRate_radps);   
 
         float leftTickSpeed = (leftTicksAvg - prevLeft) / dt;
@@ -147,7 +147,8 @@ public:
         if (_straightMode) {
             if (!_headingSetpointValid) {
                 _headingSetpoint = yaw;
-                _headingSetpointValid = true; 
+                _headingSetpointValid = true;
+                Serial.printf("heading is locked at %.3f, %.2f", _headingSetpoint, _headingSetpoint * RAD_TO_DEG); 
             }
             float headingError = yaw - _headingSetpoint;
             Serial.printf("set point is %.5f\n", _headingSetpoint);
