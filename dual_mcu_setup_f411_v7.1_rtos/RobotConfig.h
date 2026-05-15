@@ -20,19 +20,19 @@ const float ROBOT_TRACK_WIDTH = 0.13f;
 
 // Best tunnign parameters so far
 // // Control loop period (seconds)
-float CONTROL_DT = 0.0f; // set in motioncontrollertask
+float CONTROL_DT = 0.05f; // set in motioncontrollertask
 
  // PID gains for velocity compensation
-const float KP_VEL = 0.1f;
-const float KI_VEL = 0.2f;
+const float KP_VEL = 0.2f;
+const float KI_VEL = 0.05f;
 const float KD_VEL = 0.0f;
 
-const float KP_HEADING = 2f;
+const float KP_HEADING = 3.5f;
 
 // PID gains for gyrorate heading compensation
-const float KP_OMEGA = 2.5; //started with 5 then 2, 2.7
-const float KI_OMEGA = 0.1; // increase a bit later, started with 0.1
-const float KD_OMEGA = 0;
+const float KP_OMEGA = 2.5f; //started with 5 then 2, 2.7
+const float KI_OMEGA = 0.0f; // increase a bit later, started with 0.1
+const float KD_OMEGA = 0.01f;
 
 
  // PID gains for velocity compensation

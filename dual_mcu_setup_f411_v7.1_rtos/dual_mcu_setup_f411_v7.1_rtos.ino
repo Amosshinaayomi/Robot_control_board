@@ -356,7 +356,7 @@ void motionSensorTask(void *pvParameters)
         continue;
     }
 
-    Serial.println("motion sensor task");
+    // Serial.println("motion sensor task");
     // time stamp
     motionSensorPacket_t localData;
     localData.timestamp_ms = millis();
@@ -408,8 +408,14 @@ void motionControllerTask(void *pvParameters) {
     static long prevTimestamp_ms = 0;
     static float dt = 0.0f;
 
-    motionController.setStraight(0.5f);
-    // motionController.setTargetVelocity(0.3, 3);
+
+    // ... existing declarations ...
+    static uint32_t lastModeChange = 0;
+    static uint8_t mode = 0;        // 0 = straight, 1 = pure rotation, 2 = curved
+    const uint32_t interval = 5000;  // 5 seconds
+
+    motionController.setStraight(0.35);
+    // motionController.setTargetVelocity(0, 0);
 
     // Moving forward at 0.5m/s linear velocity and 3 angular vel
     // motionController.setTargetVelocity(0.4f, 3.0f); 
@@ -422,6 +428,24 @@ void motionControllerTask(void *pvParameters) {
             vTaskDelay(pdMS_TO_TICKS(1));
             continue;
         }
+        Serial.println();
+        // ---- Mode cycling logic ----
+        // uint32_t now = millis();
+        // if (now - lastModeChange >= interval) {
+        //     lastModeChange = now;
+        //     mode = (mode + 1) % 3;
+        //     switch (mode) {
+        //         case 0:
+        //             motionController.setStraight(0.3f);
+        //             break;
+        //         case 1:
+        //             motionController.setTargetVelocity(0.0f, 0.5f);
+        //             break;
+        //         case 2:
+        //             motionController.setTargetVelocity(0.3f, 0.5f);
+        //             break;
+        //     }
+        // }
 
         // Serial.println("motion controller is running");
         // Grab latest sensor data
@@ -437,33 +461,37 @@ void motionControllerTask(void *pvParameters) {
         //     Serial.println("AHRS mutex timeout!");
         //     continue;
         // }
-        Serial.println("before motion control update");
+
         // Compute average ticks for left and right sides
         float leftTicksAvg = (localData.encoder_ticks[0] + localData.encoder_ticks[2]) / 2.0f;
         float rightTicksAvg = (localData.encoder_ticks[1] + localData.encoder_ticks[3]) / 2.0f;
         Serial.printf("lefTicksAvg is %.2f\n", leftTicksAvg);
         Serial.printf("rightTicksAvg is %.2f\n", rightTicksAvg);
 
-
-        uint32_t now = localData.timestamp_ms;
         if (prevTimestamp_ms == 0) {
-            prevTimestamp_ms = now;
+            prevTimestamp_ms = localData.timestamp_ms;
             dt = CONTROL_DT;   // first cycle use nominal
         } else {
-            dt = (now - prevTimestamp_ms) / 1000.0f;
+            dt = (localData.timestamp_ms - prevTimestamp_ms) / 1000.0f;
             // if (dt > 0.1f) dt = 0.05f;   // cap to prevent spikes
-            prevTimestamp_ms = now;
+            prevTimestamp_ms = localData.timestamp_ms;
         }
         Serial.printf("dt is %.6f\n", dt);        
-        
+        Serial.printf("yawRate degs is %.3f\n", localData.yawRate);
         float yawRad = localData.yaw * DEG_TO_RAD;
-        float yawRate_dps = localData.yawRate * DEG_TO_RAD;
+        float yawRate_rad = localData.yawRate * DEG_TO_RAD;
         prevTimestamp_ms = localData.timestamp_ms;
 
 
+        static float yawRateBuffer[3] = {0};
+        static uint8_t idx = 0;
+        yawRateBuffer[idx] = yawRate_rad;
+        idx = (idx + 1) % 3;
+        float filteredYawRate_rad = (yawRateBuffer[0] + yawRateBuffer[1] + yawRateBuffer[2]) / 3.0f;
+        Serial.printf("filteredYawRate_rad yaw is %.4f\n", filteredYawRate_rad);
         // Update motion controller
         float motorsVolt[2];
-        motionController.update(leftTicksAvg, rightTicksAvg, yawRad, yawRate_dps, dt, motorsVolt);
+        motionController.update(leftTicksAvg, rightTicksAvg, yawRad, filteredYawRate_rad, dt, motorsVolt);
 
         Serial.printf("left motor voltage is %.3f\nright motor voltage is %.3f\n", motorsVolt[0], motorsVolt[1]);
         setLeftMotorsVoltage(motorsVolt[0]);
@@ -475,7 +503,7 @@ void motionControllerTask(void *pvParameters) {
         encoderManager.setDirection(2, leftMotorDir);
         encoderManager.setDirection(1, rightMotorDir);
         encoderManager.setDirection(3, rightMotorDir);
-        Serial.println("after motion control update");
+        // Serial.println("after motion control update");
         motorControllerTaskHertCount++;
 
         Serial.println();
@@ -505,7 +533,7 @@ void poseTask(void *pvParameters) {
             continue;
         }
         motionSensorPacket_t localData;
-        Serial.println("pose task");
+        // Serial.println("pose task");
         // Get latest sensor data (from ahrsData)
         xSemaphoreTake(ahrsMutex, portMAX_DELAY);
         localData = ahrsData;
@@ -959,7 +987,7 @@ void setup() {
     xTaskCreate(commsTask, "comms", 1024, NULL, 3, &commsHandle);
     xTaskCreate(motionSensorTask, "motionSensor", 1024, NULL, 3, &motionSensorHandle); // priority 
     // xTaskCreate(motorTask, "Motor", 512, NULL, 2, &motorHandle);
-    xTaskCreate(motionControllerTask, "MotionControl", 1024, NULL, 2, &motionControlHandle);
+    // xTaskCreate(motionControllerTask, "MotionControl", 1024, NULL, 2, &motionControlHandle);
     xTaskCreate(printTask, "Print", 1024, NULL, 2, &printHandle);
     xTaskCreate(speedTestTask, "speedTestTask", 2048, NULL, 2, NULL);
     xTaskCreate(ahrsCalibrationTask, "Calibration", 1024, NULL, 5, NULL); // highest priority

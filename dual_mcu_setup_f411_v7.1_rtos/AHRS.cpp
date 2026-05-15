@@ -203,7 +203,7 @@ void AHRS::update()
 
 
         // gx_dps = -gx_dps;
-        gz_dps = -gz_dps;
+        // gz_dps = -gz_dps;
 
         yawRate = gz_dps;   // filtered yaw rate        
         accelFiltered[0] = ax_g;

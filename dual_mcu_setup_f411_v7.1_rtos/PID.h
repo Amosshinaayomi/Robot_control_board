@@ -23,12 +23,14 @@ public:
         float D = 0.0f;
         if(_kd != 0.0f &&  _dt >= 0.0f) 
         {
-            D =  _kd * (measurement - _prev_measurement) / _dt;            
+            D =  _kd * (measurement - _prev_measurement) / _dt;  
+            // Serial.printf("D gain is %.2f\n", D);          
         }
         _prev_measurement = measurement;
 
         float output = P + _ki * _integral - D;  // note: D on measurement, negative sign
         output = constrain(output, _out_min, _out_max);
+        // Serial.printf("pid output is %.3f\n", output);        
         return output;
     }
 
