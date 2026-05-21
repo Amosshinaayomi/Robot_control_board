@@ -374,7 +374,20 @@ void motionSensorTask(void *pvParameters)
     // Serial.printf("encoder 2 is %i\n", localData.encoder_ticks[2]);
     localData.encoder_ticks[3] = encoderManager.getTicks(3);
     // Serial.printf("encoder 3 is %i\n", localData.encoder_ticks[3]);
+    
     localData.yawRate = ahrs.getYawRate();
+    static float filteredYawRate = 0.0f;
+    static bool first = true;
+    const float alpha = 0.15f;   
+
+    float raw = localData.yawRate;   // deg/s (or rad/s)
+    if (first) {
+        filteredYawRate = raw;
+        first = false;
+    } else {
+        filteredYawRate = alpha * raw + (1.0f - alpha) * filteredYawRate;
+    }
+    localData.yawRateFiltered = filteredYawRate;
     // Accelerometer and gyro
     ahrs.getAccel(localData.accel_g); 
     ahrs.getGyro(localData.gyro_dps); 
@@ -412,9 +425,11 @@ void motionControllerTask(void *pvParameters) {
     // ... existing declarations ...
     static uint32_t lastModeChange = 0;
     static uint8_t mode = 0;        // 0 = straight, 1 = pure rotation, 2 = curved
-    const uint32_t interval = 5000;  // 5 seconds
+    const uint32_t interval = 1000;  // 5 seconds
 
-    motionController.setStraight(0.35);
+    float linear_vel = 0.25;
+    float angular_vel = 1;
+    // motionController.setStraight(0.35);
     // motionController.setTargetVelocity(0, 0);
 
     // Moving forward at 0.5m/s linear velocity and 3 angular vel
@@ -430,22 +445,54 @@ void motionControllerTask(void *pvParameters) {
         }
         Serial.println();
         // ---- Mode cycling logic ----
-        // uint32_t now = millis();
-        // if (now - lastModeChange >= interval) {
-        //     lastModeChange = now;
-        //     mode = (mode + 1) % 3;
-        //     switch (mode) {
-        //         case 0:
-        //             motionController.setStraight(0.3f);
-        //             break;
-        //         case 1:
-        //             motionController.setTargetVelocity(0.0f, 0.5f);
-        //             break;
-        //         case 2:
-        //             motionController.setTargetVelocity(0.3f, 0.5f);
-        //             break;
-        //     }
-        // }
+        uint32_t now = millis();
+        if (now - lastModeChange >= interval) {
+            lastModeChange = now;
+            mode = (mode + 1) % 13;
+
+            switch (mode) {
+                case 0:
+                    motionController.setStraight(linear_vel);
+                    break;
+                case 1:
+                    motionController.setStraight(-linear_vel);
+
+                    break;
+                case 2:
+                    motionController.setTargetVelocity(0.0f, angular_vel);
+                    break;
+                case 3:
+                    motionController.setTargetVelocity(0.0f, -angular_vel);
+                    break;
+               case 4:
+                    motionController.setTargetVelocity(linear_vel, angular_vel);
+                    break;
+                case 5:
+                    motionController.setTargetVelocity(-linear_vel, -angular_vel);
+                    break;
+                case 6:
+                    motionController.setStraight(0.0);
+                    break;
+                case 7:
+                  // motionController.setStraight(0.0);
+                  break;
+                case 8:
+                    // motionController.setStraight(0.0);
+                    break;
+                case 9:
+                  // motionController.setStraight(0.0);
+                  break;
+                case 10:
+                  // motionController.setStraight(0.0);
+                  break;
+                case 11:
+                    // motionController.setStraight(0.0);
+                    break;
+                case 12:
+                  // motionController.setStraight(0.0);
+                  break;
+            }
+        }
 
         // Serial.println("motion controller is running");
         // Grab latest sensor data
@@ -477,22 +524,14 @@ void motionControllerTask(void *pvParameters) {
             prevTimestamp_ms = localData.timestamp_ms;
         }
         Serial.printf("dt is %.6f\n", dt);        
-        Serial.printf("yawRate degs is %.3f\n", localData.yawRate);
+        Serial.printf("yawRate degs is %.3f\n", localData.yawRateFiltered);
         float yawRad = localData.yaw * DEG_TO_RAD;
-        float yawRate_rad = localData.yawRate * DEG_TO_RAD;
+        float yawRateFiltered_rad = localData.yawRateFiltered * DEG_TO_RAD;
         prevTimestamp_ms = localData.timestamp_ms;
 
 
-        static float yawRateBuffer[3] = {0};
-        static uint8_t idx = 0;
-        yawRateBuffer[idx] = yawRate_rad;
-        idx = (idx + 1) % 3;
-        float filteredYawRate_rad = (yawRateBuffer[0] + yawRateBuffer[1] + yawRateBuffer[2]) / 3.0f;
-        Serial.printf("filteredYawRate_rad yaw is %.4f\n", filteredYawRate_rad);
-        // Update motion controller
-
         float motorsVolt[2];
-        motionController.update(leftTicksAvg, rightTicksAvg, yawRad, yawRate_rad, dt, motorsVolt);
+        motionController.update(leftTicksAvg, rightTicksAvg, yawRad, yawRateFiltered_rad, dt, motorsVolt);
 
         Serial.printf("left motor voltage is %.3f\nright motor voltage is %.3f\n", motorsVolt[0], motorsVolt[1]);
         setLeftMotorsVoltage(motorsVolt[0]);
@@ -923,7 +962,7 @@ void printTask(void *pvParameters)
       lastToggle = millis();
     }
     digitalToggle(LED_PIN);
-    vTaskDelay(1000 / portTICK_PERIOD_MS);
+    vTaskDelay(300 / portTICK_PERIOD_MS);
 
   }
 }
@@ -988,7 +1027,7 @@ void setup() {
     xTaskCreate(commsTask, "comms", 1024, NULL, 3, &commsHandle);
     xTaskCreate(motionSensorTask, "motionSensor", 1024, NULL, 3, &motionSensorHandle); // priority 
     // xTaskCreate(motorTask, "Motor", 512, NULL, 2, &motorHandle);
-    xTaskCreate(motionControllerTask, "MotionControl", 1024, NULL, 2, &motionControlHandle);
+    // xTaskCreate(motionControllerTask, "MotionControl", 1024, NULL, 2, &motionControlHandle);
     xTaskCreate(printTask, "Print", 1024, NULL, 2, &printHandle);
     xTaskCreate(speedTestTask, "speedTestTask", 2048, NULL, 2, NULL);
     xTaskCreate(ahrsCalibrationTask, "Calibration", 1024, NULL, 5, NULL); // highest priority

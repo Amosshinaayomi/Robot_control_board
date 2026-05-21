@@ -23,8 +23,8 @@ const float ROBOT_TRACK_WIDTH = 0.13f;
 float CONTROL_DT = 0.05f; // set in motioncontrollertask
 
  // PID gains for velocity compensation
-const float KP_VEL = 0.25f;
-const float KI_VEL = 0.05f;
+const float KP_VEL = 0.28f;
+const float KI_VEL = 0.025f;
 const float KD_VEL = 0.0f;
 
 const float KP_HEADING = 3.5f;
