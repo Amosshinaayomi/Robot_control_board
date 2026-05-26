@@ -1,8 +1,4 @@
 // ==== 1. INCLUDES AND GLOBAL OBJECTS ====
-#ifndef configUSE_IDLE_HOOK
-#define configUSE_IDLE_HOOK 1
-#endif
-
 #include "AHRS.h"
 #include <task.h>
 #include <EncoderManager.h>
@@ -11,19 +7,6 @@
 #include "communications.h"
 #include "comm_protocol.h"
 #include <event_groups.h>
-#include <IWatchdog.h>
-
-
-
-void vApplicationIdleHook(void) {
-    static uint32_t lastFeed = 0;
-    uint32_t now = millis();
-    // Feed every 1 second (or any interval less than timeout)
-    if (now - lastFeed >= 1000) {
-        IWatchdog.reload();
-        lastFeed = now;
-    }
-}
 
 // Stack overflow hook
 extern "C" void vApplicationStackOverflowHook(TaskHandle_t xTask, char *pcTaskName) {
@@ -32,14 +15,12 @@ extern "C" void vApplicationStackOverflowHook(TaskHandle_t xTask, char *pcTaskNa
     while (1);
 }
 
-
 // Event bits and system flags
 #define EVT_RUNNING         (1 << 0)   // system enabled (from CMD_RUN)
 #define EVT_CALIB_REQUEST   (1 << 1)   // calibration in progress (tasks must halt)
 #define EVT_CALIBRATED      (1 << 2)   // calibration completed successfully
 
 EventGroupHandle_t sysEventGroup;
-
 
 
 // Create encoder manager instance
@@ -97,15 +78,6 @@ SemaphoreHandle_t poseMutex;
 
 bool initAllHardware(uint8_t* errorCode);
 void calibrateMagnetometer2D(int duration);
-
-
-void enableWatchdog() {
-    // Set timeout to 4 seconds (adjust as needed)
-    IWatchdog.begin(4000);
-    Serial.println("IWDG enabled (4 sec timeout)");
-}
-
-
 
 bool isSystemReady() {
     EventBits_t bits = xEventGroupGetBits(sysEventGroup);
@@ -455,7 +427,13 @@ void motionControllerTask(void *pvParameters) {
 
     float linear_vel = 0.25;
     float angular_vel = 1;
-    motionController.setStraight(linear_vel);
+
+
+    // Deadband with hysteresis
+    static float last_yawRate = 0;
+    const float HYST_IN = (DEG_TO_RAD / 2.0);   // 0.5 deg/s – enter dead zone
+    const float HYST_OUT = DEG_TO_RAD;  // 1.0 deg/s – exit dead zone
+    // motionController.setStraight(0.35);
     // motionController.setTargetVelocity(0, 0);
 
     // Moving forward at 0.5m/s linear velocity and 3 angular vel
@@ -471,54 +449,54 @@ void motionControllerTask(void *pvParameters) {
         }
         Serial.println();
         // ---- Mode cycling logic ----
-        // uint32_t now = millis();
-        // if (now - lastModeChange >= interval) {
-        //     lastModeChange = now;
-        //     mode = (mode + 1) % 13;
+        uint32_t now = millis();
+        if (now - lastModeChange >= interval) {
+            lastModeChange = now;
+            mode = (mode + 1) % 13;
 
-        //     switch (mode) {
-        //         case 0:
-        //             motionController.setStraight(linear_vel);
-        //             break;
-        //         case 1:
-        //             motionController.setStraight(-linear_vel);
+            switch (mode) {
+                case 0:
+                    motionController.setStraight(linear_vel);
+                    break;
+                case 1:
+                    motionController.setStraight(-linear_vel);
 
-        //             break;
-        //         case 2:
-        //             motionController.setTargetVelocity(0.0f, angular_vel);
-        //             break;
-        //         case 3:
-        //             motionController.setTargetVelocity(0.0f, -angular_vel);
-        //             break;
-        //        case 4:
-        //             motionController.setTargetVelocity(linear_vel, angular_vel);
-        //             break;
-        //         case 5:
-        //             motionController.setTargetVelocity(-linear_vel, -angular_vel);
-        //             break;
-        //         case 6:
-        //             motionController.setStraight(0.0);
-        //             break;
-        //         case 7:
-        //           // motionController.setStraight(0.0);
-        //           break;
-        //         case 8:
-        //             // motionController.setStraight(0.0);
-        //             break;
-        //         case 9:
-        //           // motionController.setStraight(0.0);
-        //           break;
-        //         case 10:
-        //           // motionController.setStraight(0.0);
-        //           break;
-        //         case 11:
-        //             // motionController.setStraight(0.0);
-        //             break;
-        //         case 12:
-        //           // motionController.setStraight(0.0);
-        //           break;
-        //     }
-        // }
+                    break;
+                case 2:
+                    motionController.setTargetVelocity(0.0f, angular_vel);
+                    break;
+                case 3:
+                    motionController.setTargetVelocity(0.0f, -angular_vel);
+                    break;
+               case 4:
+                    motionController.setTargetVelocity(linear_vel, angular_vel);
+                    break;
+                case 5:
+                    motionController.setTargetVelocity(-linear_vel, -angular_vel);
+                    break;
+                case 6:
+                    motionController.setStraight(0.0);
+                    break;
+                case 7:
+                  // motionController.setStraight(0.0);
+                  break;
+                case 8:
+                    // motionController.setStraight(0.0);
+                    break;
+                case 9:
+                  // motionController.setStraight(0.0);
+                  break;
+                case 10:
+                  // motionController.setStraight(0.0);
+                  break;
+                case 11:
+                    // motionController.setStraight(0.0);
+                    break;
+                case 12:
+                  // motionController.setStraight(0.0);
+                  break;
+            }
+        }
 
         // Serial.println("motion controller is running");
         // Grab latest sensor data
@@ -538,28 +516,34 @@ void motionControllerTask(void *pvParameters) {
         // Compute average ticks for left and right sides
         float leftTicksAvg = (localData.encoder_ticks[0] + localData.encoder_ticks[2]) / 2.0f;
         float rightTicksAvg = (localData.encoder_ticks[1] + localData.encoder_ticks[3]) / 2.0f;
-        // Serial.printf("lefTicksAvg is %.2f\n", leftTicksAvg);
-        // Serial.printf("rightTicksAvg is %.2f\n", rightTicksAvg);
+        Serial.printf("lefTicksAvg is %.2f\n", leftTicksAvg);
+        Serial.printf("rightTicksAvg is %.2f\n", rightTicksAvg);
 
         if (prevTimestamp_ms == 0) {
-            prevTimestamp_ms = localData.timestamp_ms;
             dt = CONTROL_DT;   // first cycle use nominal
         } else {
             dt = (localData.timestamp_ms - prevTimestamp_ms) / 1000.0f;
             // if (dt > 0.1f) dt = 0.05f;   // cap to prevent spikes
-            prevTimestamp_ms = localData.timestamp_ms;
         }
-        // Serial.printf("dt is %.6f\n", dt);        
-        // Serial.printf("yawRate degs is %.3f\n", localData.yawRateFiltered);
-        float yawRad = localData.yaw * DEG_TO_RAD;
-        float yawRateFiltered_rad = localData.yawRateFiltered * DEG_TO_RAD;
         prevTimestamp_ms = localData.timestamp_ms;
 
+        Serial.printf("dt is %.6f\n", dt);     
 
+        Serial.printf("yawRate degs is %.3f\n", localData.yawRateFiltered);
+        float yawRad = localData.yaw * DEG_TO_RAD;
+
+        float yawRateFiltered_rad = localData.yawRateFiltered * DEG_TO_RAD;
+        if(fabs(yawRateFiltered_rad) < HYST_IN) {
+          yawRateFiltered_rad = 0;
+        } else if(fabs(yawRateFiltered_rad) < HYST_OUT && fabs(last_yawRate) < HYST_IN) {
+          yawRateFiltered_rad = 0;
+        }
+        last_yawRate = yawRateFiltered_rad;
+        Serial.printf("filtered yawRate degs is %.3f\n", yawRateFiltered_rad);
         float motorsVolt[2];
         motionController.update(leftTicksAvg, rightTicksAvg, yawRad, yawRateFiltered_rad, dt, motorsVolt);
 
-        // Serial.printf("left motor voltage is %.3f\nright motor voltage is %.3f\n", motorsVolt[0], motorsVolt[1]);
+        Serial.printf("left motor voltage is %.3f\nright motor voltage is %.3f\n", motorsVolt[0], motorsVolt[1]);
         setLeftMotorsVoltage(motorsVolt[0]);
         setRightMotorsVoltage(motorsVolt[1]); 
         bool leftMotorDir = (motorsVolt[0] >= 0);   
@@ -968,8 +952,8 @@ void printTask(void *pvParameters)
     xSemaphoreTake(ahrsMutex, portMAX_DELAY);
     localData = ahrsData;
     xSemaphoreGive(ahrsMutex);
-    // printAHRSPacket(localData);
-    // sendVisualizationData(localData);
+    printAHRSPacket(localData);
+    sendVisualizationData(localData);
 
     pose_packet_t pose;
     if (xSemaphoreTake(poseMutex, pdMS_TO_TICKS(1)) == pdTRUE) {
@@ -979,10 +963,7 @@ void printTask(void *pvParameters)
         Serial.println("AHRS mutex timeout!");
         continue;
     }
-    Serial.printf("Linear Vel: %.2f\n", pose.v_linear);
-    Serial.printf("angular Vel: %.2f\n", pose.v_angular);
-    Serial.printf("theta in degs: .%2f\n", pose.theta * RAD_TO_DEG);
-    // printPose(pose);  
+    printPose(pose);  
     ahrsTaskHertCount = motorControllerTaskHertCount = motorTaskHertCount = 0;
     static unsigned long lastToggle = 0;
     if(millis() - lastToggle >= 500)
@@ -991,7 +972,7 @@ void printTask(void *pvParameters)
       lastToggle = millis();
     }
     digitalToggle(LED_PIN);
-    vTaskDelay(300 / portTICK_PERIOD_MS);
+    vTaskDelay(1000 / portTICK_PERIOD_MS);
 
   }
 }

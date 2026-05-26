@@ -8,7 +8,7 @@
 const float MAX_MOTOR_VOLTAGE = 9.0f;
 
 // Battery nominal voltage (for development, will be measured later)
-static float BATTERY_VOLTAGE = 0;
+volatile float BATTERY_VOLTAGE = 0;
 
 // Track width (meters)
 const float ROBOT_TRACK_WIDTH = 0.13f;
@@ -23,14 +23,14 @@ const float ROBOT_TRACK_WIDTH = 0.13f;
 float CONTROL_DT = 0.05f; // set in motioncontrollertask
 
  // PID gains for velocity compensation
-const float KP_VEL = 0.19f;
+const float KP_VEL = 0.28f;
 const float KI_VEL = 0.025f;
 const float KD_VEL = 0.0f;
 
 const float KP_HEADING = 3.5f;
 
 // PID gains for gyrorate heading compensation
-const float KP_OMEGA = 1.7f; //started with 5 then 2, 2.7
+const float KP_OMEGA = 2.5f; //started with 5 then 2, 2.7
 const float KI_OMEGA = 0.0f; // increase a bit later, started with 0.1
 const float KD_OMEGA = 0.01f;
 

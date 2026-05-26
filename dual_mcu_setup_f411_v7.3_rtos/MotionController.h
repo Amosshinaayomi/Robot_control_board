@@ -120,11 +120,11 @@ public:
     // Main control update, to be called at fixed interval (dt seconds)
     void update(float leftTicksAvg, float rightTicksAvg, float yaw, float yawRate_radps, float dt, float *motorsVoltage) {
         // 1. Compute wheel speeds (ticks/s)
-        // Serial.printf("prevleft tick is %f\n", prevLeft);
-        // Serial.printf("prev right tick is %f\n", prevRight);   
+        Serial.printf("prevleft tick is %f\n", prevLeft);
+        Serial.printf("prev right tick is %f\n", prevRight);   
 
-        // Serial.printf("absolute yaw is %.5f, degs: %.2f\n", yaw, yaw * RAD_TO_DEG);
-        // Serial.printf("yawRate is %.5f\n", yawRate_radps);   
+        Serial.printf("absolute yaw is %.5f, degs: %.2f\n", yaw, yaw * RAD_TO_DEG);
+        Serial.printf("yawRate is %.5f\n", yawRate_radps);   
 
         float leftTickSpeed = (leftTicksAvg - prevLeft) / dt;
         float rightTickSpeed = (rightTicksAvg - prevRight) / dt;
@@ -148,83 +148,98 @@ public:
 
         leftTickSpeedF /= FILTER_WINDOW_SIZE;
         rightTickSpeedF /=FILTER_WINDOW_SIZE;
-        // Serial.printf("leftTickSpeedF is %.f\nrightTickSpeedF is %.f\n", leftTickSpeedF, rightTickSpeedF); 
+        Serial.printf("leftTickSpeedF is %.f\nrightTickSpeedF is %.f\n", leftTickSpeedF, rightTickSpeedF); 
         prevLeft = leftTicksAvg;
         prevRight = rightTicksAvg;
         
         // Outer heading loop (produces desired yaw rate)
-        // float desiredOmega = _targetOmega;
         // 2. Heading correction if in straight mode
-        static float headingError = 0;
         if (_straightMode) {
             if (!_headingSetpointValid) {
                 _headingSetpoint = yaw;
                 _headingSetpointValid = true;
-                // Serial.printf("heading is locked at %.3f, %.2f", _headingSetpoint, _headingSetpoint * RAD_TO_DEG); 
+                Serial.printf("heading is locked at %.3f, %.2f", _headingSetpoint, _headingSetpoint * RAD_TO_DEG); 
             }
-            headingError = yaw - _headingSetpoint;
-            // Serial.printf("set point is %.5f\n", _headingSetpoint);
+            float headingError = yaw - _headingSetpoint;
+            Serial.printf("set point is %.5f\n", _headingSetpoint);
             // Normalize to [-π, π] (assuming yaw in radians)
             headingError = atan2f(sinf(headingError), cosf(headingError));
-            // Serial.printf("MAX_OMEGA_RADPS is %.5f\n", MAX_OMEGA_RADPS);
+            Serial.printf("MAX_OMEGA_RADPS is %.5f\n", MAX_OMEGA_RADPS);
             // Adjust angular velocity command
             _targetOmega = KP_HEADING * headingError;
-            // Serial.printf("heading error %.5f\n", headingError);            
+            Serial.printf("heading error %.5f\n", headingError);            
         }
         // Feedforward block
         float desiredOmega_dps = -(_targetOmega * RAD_TO_DEG);   // to deg/s
-        // Serial.printf("desired correction Omega in degs is %.3f\n", desiredOmega_dps);
+        Serial.printf("desired correction Omega in degs is %.3f\n", desiredOmega_dps);
         float ff_angular_volt_diff = getAngularFeedforwardVoltageDiff(desiredOmega_dps); 
-        // Serial.printf("ffOmegaCorrection is %.2f\n", ff_angular_volt_diff);
+        Serial.printf("ffOmegaCorrection is %.2f\n", ff_angular_volt_diff);
         int8_t sign = (ff_angular_volt_diff >= 0) ? 1 : -1;
         // Split voltage difference and add to motor commands (direct voltage feedforward)
         float left_angular_ff = sign * fabs(ff_angular_volt_diff) / 2.0f;
         float right_angular_ff = -sign * fabs(ff_angular_volt_diff) / 2.0f;
-        // Serial.printf("angular_ff voltage correction for left motor is %.3f\n", left_angular_ff);
-        // Serial.printf("angular_ff voltage correction for right motor is %.3f\n", right_angular_ff);
+        Serial.printf("angular_ff voltage correction for left motor is %.3f\n", left_angular_ff);
+        Serial.printf("angular_ff voltage correction for right motor is %.3f\n", right_angular_ff);
 
 
         // Inner angular velocity loop (PID on yaw rate)
+        
         // Filter out noisy gyro readings
-        const float RESOLUTION_RADPS = DEG_TO_RAD / 0.5;   // 2 deg/s
-        float yawRate_corrected = yawRate_radps;
-        if ((fabs(yawRate_corrected) < RESOLUTION_RADPS))
-        {
-            // Serial.println("yawrate corrected");
-            yawRate_corrected = 0.0f;
-        }
+        // const float RESOLUTION_RADPS = DEG_TO_RAD / 0.5;   // 2 deg/s
+        // float yawRate_corrected = yawRate_radps;
+
+        // if ((fabs(yawRate_corrected) < RESOLUTION_RADPS))
+        // {
+        //     // Serial.println("yawrate corrected");
+        //     yawRate_corrected = 0.0f;
+        // }
         // Serial.printf("corrected yawrate is %.2f\n", yawRate_corrected);
 
 
-        float quantised = roundf(yawRate_corrected / RESOLUTION_RADPS) * RESOLUTION_RADPS;
+        // float quantised = roundf(yawRate_corrected / RESOLUTION_RADPS) * RESOLUTION_RADPS;
         // Serial.printf("quantized yawRate after clamping is %.3f\n", quantised);
-        // float omegaCorrection = _pidOmega.compute(_targetOmega, quantised);
-        float omegaCorrection = constrain((_pidOmega.compute(_targetOmega, quantised)),  -MAX_OMEGA_RADPS,  MAX_OMEGA_RADPS);
 
-        // Serial.printf("omega correction is %.5f\n", omegaCorrection);
+        // float omegaCorrection = constrain((_pidOmega.compute(_targetOmega, quantised)),  -MAX_OMEGA_RADPS,  MAX_OMEGA_RADPS);
+        float omegaCorrection = constrain((_pidOmega.compute(_targetOmega, yawRate_radps)),  -MAX_OMEGA_RADPS,  MAX_OMEGA_RADPS);
+        Serial.printf("omega correction is %.5f\n", omegaCorrection);
+        
+        static float prev_omega = 0;
+        const float MAX_SLEW_RATE = 0.5f;   // rad/s per 50ms
+        float omega_cmd = omegaCorrection;
+        float delta = omega_cmd - prev_omega;
+
+        if (delta > MAX_SLEW_RATE) omega_cmd = prev_omega + MAX_SLEW_RATE;
+        if (delta < -MAX_SLEW_RATE) omega_cmd = prev_omega - MAX_SLEW_RATE;
+        
+        prev_omega = omega_cmd;
+        omegaCorrection = omega_cmd;
+
+        omegaCorrection = constrain(omegaCorrection,  -MAX_OMEGA_RADPS,  MAX_OMEGA_RADPS);
+
+        Serial.printf("omega correction  after slewrate is %.5f\n", omegaCorrection);
         // 3. Desired side speeds from kinematics (m/s)
         float leftDesired_mps = _targetV - omegaCorrection  * (ROBOT_TRACK_WIDTH / 2.0f);
         float rightDesired_mps = _targetV + omegaCorrection * (ROBOT_TRACK_WIDTH / 2.0f);
-        // Serial.printf("leftDesired_mps is %f\n", leftDesired_mps);
-        // Serial.printf("rightDesired_mps is %f\n", rightDesired_mps);
+        Serial.printf("leftDesired_mps is %f\n", leftDesired_mps);
+        Serial.printf("rightDesired_mps is %f\n", rightDesired_mps);
 
         // 4. Convert to desired ticks/s using encoder resolution
         const float leftDesired = leftDesired_mps * TICKS_PER_METER;
         const float rightDesired = rightDesired_mps * TICKS_PER_METER;
-        // Serial.printf("leftDesired ticks is %f\n", leftDesired);
-        // Serial.printf("rightDesired ticks is %f\n", rightDesired);
+        Serial.printf("leftDesired ticks is %f\n", leftDesired);
+        Serial.printf("rightDesired ticks is %f\n", rightDesired);
 
-        // Serial.printf("current left speed(ticks/sec) is %f\n", leftTickSpeed);
-        // Serial.printf("current right speed(ticks/sec) is %f\n", rightTickSpeed);
-        // Serial.printf("leftDesired ticks_per_meter is %f\n", leftDesired);
-        // Serial.printf("rightDesired ticks_per_meter is %f\n", rightDesired);
+        Serial.printf("current left speed(ticks/sec) is %f\n", leftTickSpeed);
+        Serial.printf("current right speed(ticks/sec) is %f\n", rightTickSpeed);
+        Serial.printf("leftDesired ticks_per_meter is %f\n", leftDesired);
+        Serial.printf("rightDesired ticks_per_meter is %f\n", rightDesired);
 
         float leftVelocity_mps = leftTickSpeedF / TICKS_PER_METER;
         float rightVelocity_mps = rightTickSpeedF / TICKS_PER_METER;
         float robotVelocity_mps = (leftVelocity_mps + rightVelocity_mps) / 2.0f;
-        // Serial.printf("current left velocity(m/s) is %f\n", leftVelocity_mps);
-        // Serial.printf("current right velocity(m/s) is %f\n", rightVelocity_mps);
-        // Serial.printf("current robot velocity(m/s) is %f\n", robotVelocity_mps);
+        Serial.printf("current left velocity(m/s) is %f\n", leftVelocity_mps);
+        Serial.printf("current right velocity(m/s) is %f\n", rightVelocity_mps);
+        Serial.printf("current robot velocity(m/s) is %f\n", robotVelocity_mps);
         
 
         // 5. Compute PID outputs (volts)
@@ -234,37 +249,27 @@ public:
         const float leftFF = getFeedforwardVoltageLeft(leftDesired);
         const float rightFF = getFeedforwardVoltageRight(rightDesired);
 
-        // Serial.printf("left FF voltage is %.2f\n", leftFF);
-        // Serial.printf("right FF voltage is %.2f\n", rightFF);
+        Serial.printf("left FF voltage is %.2f\n", leftFF);
+        Serial.printf("right FF voltage is %.2f\n", rightFF);
 
         float leftPIDout = _pidLeft.compute(leftDesired, leftTickSpeedF);
         float rightPIDout = _pidRight.compute(rightDesired, rightTickSpeedF);
-        // Serial.printf("leftPIDout voltage is %.2f\n", leftPIDout);
-        // Serial.printf("rightPIDout voltage is %.2f\n", rightPIDout);
+        Serial.printf("leftPIDout voltage is %.2f\n", leftPIDout);
+        Serial.printf("rightPIDout voltage is %.2f\n", rightPIDout);
 
-        float leftCmd;
-        float rightCmd;
-        if(fabs(headingError) >= (DEG_TO_RAD * 7)){
-            leftCmd = leftFF + leftPIDout + left_angular_ff;
-            rightCmd = rightFF + rightPIDout + right_angular_ff;   
-            // Serial.println("using angular feedforward table");
-        } else {
-            leftCmd = leftFF + leftPIDout;
-            rightCmd = rightFF + rightPIDout;   
-            // Serial.println("using normal omega correction");         
-        }
-
-        // Serial.printf("leftCmd before constrain is %f\n", leftCmd);
-        // Serial.printf("rightCmd before constrain is %f\n", rightCmd);
+        float leftCmd = leftFF + leftPIDout + left_angular_ff;
+        float rightCmd = rightFF + rightPIDout + right_angular_ff;
+        Serial.printf("leftCmd before constrain is %f\n", leftCmd);
+        Serial.printf("rightCmd before constrain is %f\n", rightCmd);
 
         leftCmd = constrain(leftCmd, -MAX_MOTOR_VOLTAGE, MAX_MOTOR_VOLTAGE);
         rightCmd = constrain(rightCmd, -MAX_MOTOR_VOLTAGE, MAX_MOTOR_VOLTAGE);
 
-        // Serial.printf("leftCmd after constrain is %f\n", leftCmd);
-        // Serial.printf("rightCmd after constrain is %f\n", rightCmd);
+        Serial.printf("leftCmd after constrain is %f\n", leftCmd);
+        Serial.printf("rightCmd after constrain is %f\n", rightCmd);
 
         if(_targetV == 0 && _targetOmega == 0) {
-            if(fabs(leftCmd) < 2.0 && fabs(rightCmd) < 2.0)
+            if(fabs(leftCmd) < 2.0 && fabs(rightCmd) < 2.0) 
             {
                 leftCmd = 0;
                 rightCmd = 0;
@@ -277,8 +282,8 @@ public:
         // setRightMotorsVoltage(rightCmd);
         // float leftCmd = _pidLeft.compute(leftDesired, leftTickSpeed);
         // float rightCmd = _pidRight.compute(rightDesired, rightTickSpeed);
-        // Serial.printf("leftCmd is %f\n", leftCmd);
-        // Serial.printf("rightCmd is%f\n", rightCmd);
+        Serial.printf("leftCmd is %f\n", leftCmd);
+        Serial.printf("rightCmd is%f\n", rightCmd);
 
         // // 6. Apply to motors (the motor driver will convert volts to PWM)
         // setLeftMotorsVoltage(leftCmd);
@@ -301,4 +306,5 @@ private:
     float _headingSetpoint = 0.0f;
     bool _headingSetpointValid = false;
     float prevLeft = 0.0f, prevRight = 0.0f;
+    
 };
