@@ -109,10 +109,9 @@ void commsTask(void *parameter) {
             break;
         case WAIT_TYPE: 
             rxType = b;
-            Serial.printf("packet type is 0x%X\n", rxType);
+            // Serial.printf("packet type is 0x%X\n", rxType);
             rxState = WAIT_LEN;
             break;
-
         case WAIT_LEN: 
             rxLen = b;
             rxIndex = 0;
@@ -143,11 +142,11 @@ void commsTask(void *parameter) {
 
             if(rxType == PKT_TYPE_ACK)
             {
-              Serial.printf("payload len is: %i\n", rxLen);
-              Serial.printf("checksum for received ack is %i\n", b); 
-              Serial.printf("calculated checksum is %i\n", calculated); 
-              Serial.print("ACK bytes: ");
-              for (int i = 0; i < rxIndex; i++) Serial.printf("0x%02X(HEX), %i(DEC)\n", rxBuffer[i], rxBuffer[i]);                     
+              // Serial.printf("payload len is: %i\n", rxLen);
+              // Serial.printf("checksum for received ack is %i\n", b); 
+              // Serial.printf("calculated checksum is %i\n", calculated); 
+              // Serial.print("ACK bytes: ");
+              // for (int i = 0; i < rxIndex; i++) Serial.printf("0x%02X(HEX), %i(DEC)\n", rxBuffer[i], rxBuffer[i]);                     
             }
             if(calculated == b) {
               // Check packet type and parse data
@@ -268,7 +267,7 @@ void commsTask(void *parameter) {
       memcpy(txData.gyro_dps, localData.gyro_dps, sizeof(float)*3);
       memcpy(txData.encoder_ticks, localData.encoder_ticks, sizeof(int32_t)*4);
 
-      uint8_t ahrsPacket[sizeof(ahrsPacketPacked_t) + 3];
+      uint8_t ahrsPacket[sizeof(ahrsPacketPacked_t) + 3 + 1];
       // Packet header, Start byte
       ahrsPacket[idx++] = PKT_START_BYTE;
       // Sensor packet type
@@ -304,7 +303,7 @@ void commsTask(void *parameter) {
       txPose.v_linear = currentPose.v_linear;
       txPose.v_angular = currentPose.v_angular;
 
-      uint8_t posePacket[sizeof(pose_packet_packed_t) + 3];
+      uint8_t posePacket[sizeof(pose_packet_packed_t) + 3 + 1];
       idx = 0;
       // Packet header, Start byte
       posePacket[idx++] = PKT_START_BYTE;
@@ -321,7 +320,7 @@ void commsTask(void *parameter) {
       posePacket[idx++] = compute_checksum(posePacket, idx);
       // Publish data
       commSerial.write(posePacket, idx);
-      Serial.println("Pose Data sent succesfully");
+      // Serial.println("Pose Data sent succesfully");
       vTaskDelay(pdMS_TO_TICKS(1));
     }
 

@@ -172,7 +172,7 @@ void commsTask(void* parameter)
             currentPwrStatus = sysPwrStatus;
             xSemaphoreGive(sysPwrMutex);
 
-            uint8_t packet[sizeof(pwrStatus_t) + 3];
+            uint8_t packet[sizeof(pwrStatus_t) + 3 + 1];
             uint8_t idx = 0;
             // Packet header, Start byte
             packet[idx++] = PKT_START_BYTE;
@@ -232,10 +232,10 @@ void commsTask(void* parameter)
                 uint8_t calculated = compute_checksum(combined, 3 + rx_len);
                 if(rx_type == PKT_TYPE_ACK)
                 {
-                    Serial.printf("payload len is: %i\n", rx_len);
-                    Serial.printf("checksum for received ack is %i\n", b); 
-                    Serial.printf("calculated checksum is %i\n", calculated); 
-                    Serial.print("ACK bytes: ");
+                    // Serial.printf("payload len is: %i\n", rx_len);
+                    // Serial.printf("checksum for received ack is %i\n", b); 
+                    // Serial.printf("calculated checksum is %i\n", calculated); 
+                    // Serial.print("ACK bytes: ");
                     for (int i = 0; i < rx_index; i++) Serial.printf("0x%02X(HEX), %i(DEC)\n", rx_buffer[i], rx_buffer[i]);               
                 }
 

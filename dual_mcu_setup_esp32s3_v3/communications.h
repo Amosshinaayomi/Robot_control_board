@@ -19,7 +19,7 @@ void sendVisualizationData(ahrsPacketPacked_t data);
 
 byte compute_checksum(byte* data, int len) {
     byte sum = 0;
-    for (int i = 0; i < len; i++) sum ^= data[i];
+    for (size_t i = 0; i < len; i++) sum ^= data[i];
     return sum;
 }
 void sendAck(uint8_t command, uint8_t status) {
@@ -32,14 +32,14 @@ void sendAck(uint8_t command, uint8_t status) {
     packet[idx++] = (status == 0) ? PKT_TYPE_ACK : PKT_TYPE_NACK;
     packet[idx++] = sizeof(ack_packet_t);
     if(command == PKT_TYPE_POSE_DATA || command ==  PKT_TYPE_SENSOR) {
-        Serial.printf("ack packet length for 0X0%X is %i bytes\n", command, sizeof(ack_packet_t));
+        // Serial.printf("ack packet length for 0X0%X is %i bytes\n", command, sizeof(ack_packet_t));
     }
     memcpy(&packet[idx], &ack, sizeof(ack_packet_t));
     idx += sizeof(ack_packet_t);
     uint8_t checksum = compute_checksum(packet, idx);
-    Serial.printf("computed checksum for sent ack is %i\n", checksum);
+    // Serial.printf("computed checksum for sent ack is %i\n", checksum);
     packet[idx++] = checksum;
-    Serial.printf("Sending acknowledgement for packet 0X0%X, status %i\n", command, status);
+    // Serial.printf("Sending acknowledgement for packet 0X0%X, status %i\n", command, status);
     commSerial.write(packet, idx);
 }
 
@@ -57,7 +57,7 @@ void sendCommand(uint8_t cmd, const uint8_t* params, uint8_t paramLen) {
     uint8_t checksum = compute_checksum(packet, idx);
     packet[idx++] = checksum;
     commSerial.write(packet, idx);
-    Serial.printf("Sent command 0x%02X with %d params\n", cmd, paramLen);
+    // Serial.printf("Sent command 0x%02X with %d params\n", cmd, paramLen);
 
 }
 void send_message(byte type, byte len, byte* payload) {
@@ -111,7 +111,7 @@ void printlastestAHRSPacket(ahrsPacketPacked_t data)
     Serial.print(", YAW:"); Serial.println(data.yaw); 
 
     Serial.print("YawRate: "); Serial.println(data.yawRate);
-    Serial.printf("Front Left side encoder tick is %i\nFront right side encoder tick is %i\nBack Left side encoder tick is %i\nBack right side encoder tick is %i\n",data.encoder_ticks[0], data.encoder_ticks[1], data.encoder_ticks[2], data.encoder_ticks[3]);  
+    // Serial.printf("Front Left side encoder tick is %i\nFront right side encoder tick is %i\nBack Left side encoder tick is %i\nBack right side encoder tick is %i\n",data.encoder_ticks[0], data.encoder_ticks[1], data.encoder_ticks[2], data.encoder_ticks[3]);  
     Serial.println();    
 }
 

@@ -16,7 +16,7 @@ byte rx_type = 0;
 
 byte compute_checksum(byte* data, int len) {
     byte sum = 0;
-    for (int i = 0; i < len; i++) sum ^= data[i];
+    for (size_t i = 0; i < len; i++) sum ^= data[i];
     return sum;
 }
 
@@ -24,7 +24,7 @@ void sendAck(uint8_t command, uint8_t status) {
     ack_packet_t ack;
     ack.command = command;
     ack.status = status;
-    uint8_t packet[sizeof(ack_packet_t) + 3];
+    uint8_t packet[sizeof(ack_packet_t) + 3 + 1];
     uint8_t idx = 0;
     packet[idx++] = PKT_START_BYTE;
     packet[idx++] = (status == 0) ? PKT_TYPE_ACK : PKT_TYPE_NACK;
