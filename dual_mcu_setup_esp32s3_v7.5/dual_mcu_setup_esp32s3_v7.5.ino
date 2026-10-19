@@ -5,6 +5,10 @@
 #include "nvs_flash.h"
 #include "nvs.h"
 #include "tof_sensors.h"
+#include <WiFi.h>
+#include <ESPAsyncWebServer.h>
+#include <ArduinoJson.h>
+
 
 // communication flags
 bool commsEstablished;
@@ -337,7 +341,7 @@ void commsTask(void* parameter)
 
 void setup() {
   // put your setup code here, to run once:
-  Serial.begin(921600);
+  Serial.begin(115200);
   // while(!Serial){}
   nvs_flash_init();
   nvs_open("storage", NVS_READWRITE, &nvsHandle);
@@ -362,9 +366,10 @@ void setup() {
   commSerial.begin(115200, SERIAL_8N1, COMM_UART_RX, COMM_UART_TX);  
   xTaskCreate(commsTask, "commsTask", 4096, NULL, 3, &commsHandle);
   xTaskCreate(powerTask, "powerTask", 4096, NULL, 1, &powerHandle);
+
   // xTaskCreate(distSensorTask, "distSensorTask", 4096, NULL, 2, &powerHandle);
   xTaskCreate(F411StartupTask, "F411StartupTask", 4096, NULL, 1, NULL);
-  // playNote();
+  playNote();
   // delay(200);
   // sendCommand(CMD_START_SPEED_TEST, NULL, 0);
 }
