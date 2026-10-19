@@ -5,22 +5,22 @@ typedef struct {
 } waypoint;
 
 
-volatile float target_linear_vel = 0.0f;
-volatile float target_angular_vel = 0.0f;
+volatile float target_linear_vel;
+volatile float target_angular_vel;
 
 
 // Tuning parameters
-#define LOOKAHEAD_DIST      0.2f    // meters
-#define WP_TOLERANCE        0.05f    // meters
-#define MAX_LINEAR_VEL      0.2f    // m/s
+#define LOOKAHEAD_DIST      0.3f    // meters
+#define WP_TOLERANCE        0.1f    // meters
+#define MAX_LINEAR_VEL      0.4f    // m/s
 #define MAX_ANGULAR_VEL     4.0f    // rad/s
 #define VEL_REDUCTION_OMEGA 1.0f    
 
 
 static waypoint path[] = {
-    {0.2f, 0.0f},
-    {0.2f, 0.2f},
-    {0.0f, 0.2f},
+    {0.4f, 0.0f},
+    {0.4f, 0.4f},
+    {0.0f, 1.0f},
     {0.0f, 0.0f}  
 };
 

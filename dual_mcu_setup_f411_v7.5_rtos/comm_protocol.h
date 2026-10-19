@@ -24,10 +24,12 @@
 
 
 // Velocity control
-#define CMD_SET_V             0x15   // set linear velocity (float m/s)
-#define CMD_SET_W             0x16   // set angular velocity (float rad/s)
-#define CMD_SET_STRAIGHT      0x17   // enable/disable straight mode (uint8_t 0/1)
-#define CMD_EMERGENCY_STOP    0x18   // no parameters
+#define CMD_SET_VELOCITY  0x15   // 3 float payload: linear, angular, heading
+#define CMD_SET_GAINS     0x16
+#define CMD_EMERGENCY_STOP    0x17   // no parameters
+
+
+
 
 // comm_protocol.h (additions)
 #define CMD_START_SPEED_TEST  0x30   // start test sequence (no parameters)
@@ -85,6 +87,8 @@ typedef struct __attribute__((packed)) {
     uint8_t command;        // the command being acknowledged (e.g., CMD_RUN)
     uint8_t status;         // 0 = success, non-zero = error code
 } ack_packet_t;
+
+
 
 
 enum commState {

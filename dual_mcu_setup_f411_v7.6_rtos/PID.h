@@ -38,6 +38,11 @@ public:
         _integral = 0;
         _prev_measurement = 0;
     }
+    void setGains (float kp, float ki, float kd) {
+        _kp = kp;
+        _ki = ki;
+        _kd = kd;
+    }
 
 private:
     float _kp, _ki, _kd, _dt;

@@ -471,6 +471,7 @@ void motionSensorTask(void *pvParameters)
      vTaskDelayUntil(&lastWake, period);  
   }
 }
+
 void motionPlannerTask(void *pvParameters) {
     TickType_t xLastWakeTime = xTaskGetTickCount();
     const TickType_t period = pdMS_TO_TICKS(50);  // 20 Hz
@@ -507,6 +508,7 @@ void motionControllerTask(void *pvParameters) {
     const float HYST_OUT = DEG_TO_RAD;  // 1.0 deg/s – exit dead zone
     // motionController.setStraight(0);
     // motionController.setTargetVelocity(linear_vel, angular_vel);
+    motionController.lockHeading(DEG_TO_RAD * 90);
     for (;;) {
         if (!isSystemReady()) 
         {
@@ -522,7 +524,7 @@ void motionControllerTask(void *pvParameters) {
         // float linear_vel = target_linear_vel;
         // float angular_vel = target_angular_vel;
 
-        float linear_vel = 0.35;
+        float linear_vel = 0.0; // 0.35;
         float angular_vel = 0.0;
 
         motionSensorPacket_t localData;

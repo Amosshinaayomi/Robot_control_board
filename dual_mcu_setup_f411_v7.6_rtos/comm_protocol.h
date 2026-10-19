@@ -16,6 +16,9 @@
 // Packets acknowledgements
 #define PKT_TYPE_ACK        0x06   // or any unused value
 #define PKT_TYPE_NACK       0x07
+#define PKT_TYPE_VELOCITY   0x08   // velocity setpoint  (S3 → F411, no ack)
+#define PKT_TYPE_CTRL_STATE 0x09   
+
 // Startup protocol commands (sent as payload of type PKT_TYPE_COMMAND)
 #define CMD_STARTUP_REQ     0x11   // S3 → F411: request initialization
 #define CMD_STARTUP_ACK     0x12   // F411 → S3: all hardware OK
@@ -24,10 +27,12 @@
 
 
 // Velocity control
-#define CMD_SET_V             0x15   // set linear velocity (float m/s)
-#define CMD_SET_W             0x16   // set angular velocity (float rad/s)
-#define CMD_SET_STRAIGHT      0x17   // enable/disable straight mode (uint8_t 0/1)
-#define CMD_EMERGENCY_STOP    0x18   // no parameters
+#define CMD_SET_VELOCITY  0x15   // 3 float payload: linear, angular, heading
+#define CMD_SET_GAINS     0x16
+#define CMD_EMERGENCY_STOP    0x17   // no parameters
+
+
+
 
 // comm_protocol.h (additions)
 #define CMD_START_SPEED_TEST  0x30   // start test sequence (no parameters)
@@ -87,6 +92,33 @@ typedef struct __attribute__((packed)) {
 } ack_packet_t;
 
 
+
+#pragma pack(1)
+typedef struct _cmd_velocity_t {
+    float linear;    // m/s
+    float angular;   // deg/s
+    float heading;   // deg
+} cmd_velocity_t;
+#pragma pack()
+
+#pragma pack(1)
+typedef struct _cmd_gains_t {
+    float kp_vel;
+    float ki_vel;
+    float kd_vel;
+    float kp_heading;
+    float kp_omega;
+    float ki_omega;
+    float kd_omega;
+} cmd_gains_t;
+#pragma pack()
+
+#pragma pack(1)
+typedef struct _ctrl_state_t {
+    cmd_velocity_t vel;
+    cmd_gains_t    gains;
+} ctrl_state_t;
+#pragma pack()
 enum commState {
   WAIT_START,
   WAIT_TYPE,

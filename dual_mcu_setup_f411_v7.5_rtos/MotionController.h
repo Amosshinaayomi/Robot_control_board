@@ -116,6 +116,7 @@ public:
     // Lock heading at this angle
     void lockHeading(float yawAngle){
         _headingSetpoint = yawAngle;
+        _headingSetpointValid = false;
     }
     // Main control update, to be called at fixed interval (dt seconds)
     void update(float leftTicksAvg, float rightTicksAvg, float yaw, float yawRate_radps, float dt, float *motorsVoltage) {
@@ -158,7 +159,7 @@ public:
         static float headingError = 0;
         if (_straightMode) {
             if (!_headingSetpointValid) {
-                _headingSetpoint = yaw;
+                // _headingSetpoint = yaw;
                 _headingSetpointValid = true;
                 Serial.printf("heading is locked at %.3f, %.2f", _headingSetpoint, _headingSetpoint * RAD_TO_DEG); 
             }
@@ -203,7 +204,7 @@ public:
         float omegaCorrection = constrain((_pidOmega.compute(_targetOmega, quantised)),  -MAX_OMEGA_RADPS,  MAX_OMEGA_RADPS);
        
         static float prev_omega = 0;
-        const float MAX_SLEW_RATE = 2.5f;
+        const float MAX_SLEW_RATE = 2.5f; //radps
         float omega_cmd = omegaCorrection;
         float delta = omega_cmd - prev_omega;
         if (delta > MAX_SLEW_RATE) omega_cmd = prev_omega + MAX_SLEW_RATE;

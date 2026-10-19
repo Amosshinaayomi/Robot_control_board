@@ -71,6 +71,33 @@ pose_packet_t  robotPose;
 SemaphoreHandle_t poseMutex;
 
 
+
+// volatile float motionCommand.linear = 0.0f;
+// volatile float motionCommand.angular = 0.0f;
+// volatile float motionCommand.heading = 90.0f;
+
+
+volatile cmd_velocity_t motionCommand = {
+  .linear = 0.0f,
+  .angular = 0.0f,  
+  .heading = 90.0f,
+};
+
+
+volatile cmd_gains_t motionGains = {
+  .kp_vel = KP_VEL,
+  .ki_vel = KI_VEL,
+  .kd_vel = KD_VEL,
+  .kp_heading = KP_HEADING,
+  .kp_omega = KP_OMEGA,
+  .ki_omega = KI_OMEGA,
+  .kd_omega = KD_OMEGA,
+};
+
+static uint32_t last_vel_cmd_ms = 0; 
+
+
+
 bool initAllHardware(uint8_t* errorCode);
 void calibrateMagnetometer2D(int duration);
 
@@ -78,6 +105,8 @@ bool isSystemReady() {
     EventBits_t bits = xEventGroupGetBits(sysEventGroup);
     return (bits & EVT_RUNNING) && (bits & EVT_CALIBRATED) && !(bits & EVT_CALIB_REQUEST);
 }
+
+void setMotionPIDGains();
 
 void commsTask(void *parameter) {
   TickType_t lastWake = xTaskGetTickCount();
@@ -134,17 +163,16 @@ void commsTask(void *parameter) {
             memcpy(combined + 3, rxBuffer, rxLen);
             uint8_t calculated = compute_checksum(combined, 3 + rxLen);
 
-            if(rxType == PKT_TYPE_ACK)
-            {
-              // Serial.printf("payload len is: %i\n", rxLen);
-              // Serial.printf("checksum for received ack is %i\n", b); 
-              // Serial.printf("calculated checksum is %i\n", calculated); 
-              // Serial.print("ACK bytes: ");
-              // for (int i = 0; i < rxIndex; i++) Serial.printf("0x%02X(HEX), %i(DEC)\n", rxBuffer[i], rxBuffer[i]);                     
-            }
+            // if(rxType == PKT_TYPE_ACK)
+            // {
+            //   // Serial.printf("payload len is: %i\n", rxLen);
+            //   // Serial.printf("checksum for received ack is %i\n", b); 
+            //   // Serial.printf("calculated checksum is %i\n", calculated); 
+            //   // Serial.print("ACK bytes: ");
+            //   // for (int i = 0; i < rxIndex; i++) Serial.printf("0x%02X(HEX), %i(DEC)\n", rxBuffer[i], rxBuffer[i]);                     
+            // }
             if(calculated == b) {
               // Check packet type and parse data
-              // check if pack is a command packet
               if(rxType == PKT_TYPE_SENSOR) {
               } 
               else if(rxType == PKT_TYPE_POSE_DATA) {
@@ -192,15 +220,74 @@ void commsTask(void *parameter) {
                         Serial.println("Test stop command received");
                         sendAck(CMD_STOP_SPEED_TEST, 0);
                         break;
+                    case CMD_SET_GAINS: {
+                        if (paramLen < sizeof(cmd_gains_t)) {
+                            sendAck(CMD_SET_GAINS, 1);
+                            break;
+                        }
+
+                        cmd_gains_t g;
+                        memcpy(&g, params, sizeof(g));
+
+                        g.kp_vel     = clampf(g.kp_vel,     0.0f,  5.0f);
+                        g.ki_vel     = clampf(g.ki_vel,     0.0f,  2.0f);
+                        g.kd_vel     = clampf(g.kd_vel,     0.0f,  1.0f);
+                        g.kp_heading = clampf(g.kp_heading, 0.0f, 20.0f);
+                        g.kp_omega   = clampf(g.kp_omega,   0.0f, 20.0f);
+                        g.ki_omega   = clampf(g.ki_omega,   0.0f,  2.0f);
+                        g.kd_omega   = clampf(g.kd_omega,   0.0f,  1.0f);
+
+                        memcpy((void*)&motionGains, &g, sizeof(g));
+                        // motionGains = g;
+                        setMotionPIDGains();   // push into motionController
+
+                        Serial.printf("[GAINS] vel(%.3f,%.3f,%.3f) head=%.2f om(%.2f,%.3f,%.3f)\n",
+                                      g.kp_vel, g.ki_vel, g.kd_vel, g.kp_heading,
+                                      g.kp_omega, g.ki_omega, g.kd_omega);
+
+                        sendAck(CMD_SET_GAINS, 0);
+                        break;
+                    }                 
+
+                    
                     default:
                       Serial.printf("Unknown command: 0x%02X\n", cmd);
                       break;
                   }
                 }
               }
+              else if (rxType == PKT_TYPE_VELOCITY) {
+                  Serial.printf("[VEL RX] len=%u expect=%u\n", rxLen, sizeof(cmd_velocity_t));
+                  if (rxLen == sizeof(cmd_velocity_t)) {
+                      cmd_velocity_t v;
+                      memcpy(&v, rxBuffer, sizeof(v));
+
+                      Serial.printf("[VEL RAW] lin=%.4f ang=%.4f head=%.2f\n",
+                                    v.linear, v.angular, v.heading);
+
+                      v.linear  = clampf(v.linear,  -1.0f, 1.0f);
+                      v.angular = clampf(v.angular, -MAX_OMEGA_RADPS, MAX_OMEGA_RADPS);
+                      v.heading = clampf(v.heading, 0.0f, 360.0f);
+
+                      Serial.printf("[VEL CLAMP] lin=%.4f ang=%.4f head=%.2f  MAX_OM=%.2f\n",
+                                    v.linear, v.angular, v.heading, (float)MAX_OMEGA_RADPS);
+
+                      motionCommand.linear  = v.linear;
+                      motionCommand.angular = v.angular;
+                      motionCommand.heading = v.heading;
+
+                      last_vel_cmd_ms = millis();
+                      Serial.printf("[VEL STORED] lin=%.4f ang=%.4f t=%lu\n",
+                                    motionCommand.linear, motionCommand.angular,
+                                    (unsigned long)last_vel_cmd_ms);
+                  } else {
+                      Serial.printf("[VEL RX] size mismatch, ignoring\n");
+                  }
+              }
+
               else if (rxType == PWR_STATUS) {
                 if(rxLen == sizeof(pwrStatus_t)) {
-                  sendAck(PWR_STATUS, 0);
+                  // sendAck(PWR_STATUS, 0);
                   pwrStatus_t pwr;
                   memcpy(&pwr, rxBuffer, sizeof(pwrStatus_t));
                 
@@ -218,17 +305,17 @@ void commsTask(void *parameter) {
               else if(rxType == PKT_TYPE_ACK) {
                 uint8_t packetType = rxBuffer[0];    
                 uint8_t status = rxBuffer[1];            
-                // Serial.println("acknowledgement received");
-                // Serial.printf("acknowledgement is from packet 0X%X\n", packetType);
-                // Serial.printf("acknowledgement status is %i\n", status);
+                Serial.println("acknowledgement received");
+                Serial.printf("acknowledgement is from packet 0X%X\n", packetType);
+                Serial.printf("acknowledgement status is %i\n", status);
 
               }
               else if(rxType == PKT_TYPE_NACK) {
                 uint8_t packetType = rxBuffer[0];    
                 uint8_t status = rxBuffer[1];            
-                // Serial.println("no acknowledgement received");
-                // Serial.printf("acknowledgement is from packet 0X%X\n", packetType);
-                // Serial.printf("no acknowledgement status is %i\n", status);
+                Serial.println("no acknowledgement received");
+                Serial.printf("acknowledgement is from packet 0X%X\n", packetType);
+                Serial.printf("no acknowledgement status is %i\n", status);
               }
             } else {
                 Serial.println("Checksum error – packet corrupted");
@@ -314,6 +401,37 @@ void commsTask(void *parameter) {
       posePacket[idx++] = compute_checksum(posePacket, idx);
       // Publish data
       commSerial.write(posePacket, idx);
+
+
+
+      // ---- Echo control state to S3 at 5 Hz ----
+      static uint32_t lastCtrlEchoMs = 0;
+      if (millis() - lastCtrlEchoMs >= 200) {
+          lastCtrlEchoMs = millis();
+
+          ctrl_state_t cs;
+          cs.vel.linear  = motionCommand.linear;
+          cs.vel.angular = motionCommand.angular;
+          cs.vel.heading = motionCommand.heading;
+
+          cs.gains.kp_vel     = motionGains.kp_vel;
+          cs.gains.ki_vel     = motionGains.ki_vel;
+          cs.gains.kd_vel     = motionGains.kd_vel;
+          cs.gains.kp_heading = motionGains.kp_heading;
+          cs.gains.kp_omega   = motionGains.kp_omega;
+          cs.gains.ki_omega   = motionGains.ki_omega;
+          cs.gains.kd_omega   = motionGains.kd_omega;
+
+          uint8_t pkt[3 + sizeof(ctrl_state_t) + 1];
+          uint8_t i = 0;
+          pkt[i++] = PKT_START_BYTE;
+          pkt[i++] = PKT_TYPE_CTRL_STATE;
+          pkt[i++] = sizeof(ctrl_state_t);
+          memcpy(&pkt[i], &cs, sizeof(cs));
+          i += sizeof(cs);
+          pkt[i++] = compute_checksum(pkt, i);
+          commSerial.write(pkt, i);
+      }
       // Serial.println("Pose Data sent succesfully");
       vTaskDelay(pdMS_TO_TICKS(1));
     }
@@ -471,6 +589,7 @@ void motionSensorTask(void *pvParameters)
      vTaskDelayUntil(&lastWake, period);  
   }
 }
+
 void motionPlannerTask(void *pvParameters) {
     TickType_t xLastWakeTime = xTaskGetTickCount();
     const TickType_t period = pdMS_TO_TICKS(50);  // 20 Hz
@@ -497,8 +616,8 @@ void motionControllerTask(void *pvParameters) {
     static uint8_t mode = 0;        // 0 = straight, 1 = pure rotation, 2 = curved
     const uint32_t interval = 1000;  // 5 seconds
 
-    static  float linear_vel = 0.3;
-    static float angular_vel = 0.0;
+    // static  float linear_vel = 0.3;
+    // static float angular_vel = 0.8;
 
 
     // Deadband with hysteresis
@@ -507,6 +626,13 @@ void motionControllerTask(void *pvParameters) {
     const float HYST_OUT = DEG_TO_RAD;  // 1.0 deg/s – exit dead zone
     // motionController.setStraight(0);
     // motionController.setTargetVelocity(linear_vel, angular_vel);
+    float currentSetHeading = motionCommand.heading;
+    motionController.lockHeading(DEG_TO_RAD * currentSetHeading);
+
+    setMotionPIDGains();
+    // motionController.setHeadingGain(motionGains.kp_heading);
+    // motionController.setOmegaGains(motionGains.kp_omega, motionGains.ki_omega, motionGains.kd_omega);
+    // motionController.setVelGains(motionGains.kp_vel, motionGains.ki_vel, motionGains.kd_vel);
     for (;;) {
         if (!isSystemReady()) 
         {
@@ -516,20 +642,35 @@ void motionControllerTask(void *pvParameters) {
             continue;
         }
 
+        if (millis() - last_vel_cmd_ms > 500) {
+            motionCommand.linear  = 0.0f;
+            motionCommand.angular = 0.0f;
+        }
+        static const float HEADING_EPSILON = 0.1f;   // degrees
+        if (fabsf(currentSetHeading - motionCommand.heading) > HEADING_EPSILON) {
+            currentSetHeading = motionCommand.heading;
+            motionController.lockHeading(DEG_TO_RAD * currentSetHeading);
+        }
         // Serial.println("motion controller is running");
         // Grab latest sensor data
 
-        // float linear_vel = target_linear_vel;
-        // float angular_vel = target_angular_vel;
-        Serial.printf("target_linear_vel is %.f\n", linear_vel);
-        Serial.printf("target_angular_vel is %.f\n", angular_vel);
-        // float linear_vel = 0.0;
-        // float angular_vel = 0.35;
+        float linear_vel = motionCommand.linear;
+        float angular_vel = motionCommand.angular;
+        Serial.printf("lin vel is %f\nang vel is %f\n", linear_vel, angular_vel);
+        // float linear_vel = 0.0; // 0.35;
+        // float angular_vel = 0.0;
 
         motionSensorPacket_t localData;
         xSemaphoreTake(ahrsMutex, portMAX_DELAY);
         localData = ahrsData;
         xSemaphoreGive(ahrsMutex);
+        // if (xSemaphoreTake(ahrsMutex, pdMS_TO_TICKS(1)) == pdTRUE) {
+        //     localData = ahrsData;
+        //     xSemaphoreGive(ahrsMutex);
+        // } else {
+        //     Serial.println("AHRS mutex timeout!");
+        //     continue;
+        // }
 
         // Compute average ticks for left and right sides
         float leftTicksAvg = (localData.encoder_ticks[0] + localData.encoder_ticks[2]) / 2.0f;
@@ -560,16 +701,11 @@ void motionControllerTask(void *pvParameters) {
         last_yawRate = yawRateFiltered_rad;
         // Serial.printf("filtered yawRate degs is %.3f\n", yawRateFiltered_rad);
         float motorsVolt[2];
-        static bool _straightMode = false;
         if(fabs(angular_vel) == 0.0f) {
-          if(!_straightMode) {
-            Serial.println("using straighmode");
-            motionController.setStraight(linear_vel, yawRad);
-            _straightMode = true;          
-          }
-
+          Serial.println("using setmode");
+          // motionController.lockHeading(DEG_TO_RAD * motionCommand.heading);          
+          motionController.setStraight(linear_vel);
         } else{
-          _straightMode = false;
           Serial.println("using both velocity mode");
           motionController.setTargetVelocity(linear_vel, angular_vel);      
         }
@@ -1083,7 +1219,7 @@ void setup() {
     xTaskCreate(speedTestTask, "speedTestTask", 2048, NULL, 2, NULL);
     xTaskCreate(ahrsCalibrationTask, "Calibration", 1024, NULL, 5, NULL); // highest priority
     xTaskCreate(poseTask, "Pose", 1024, NULL, 2, &poseHandle);
-    xTaskCreate(motionPlannerTask, "motionPlannerTask", 2048, NULL, 3, &motionPlannerHandle);
+    // xTaskCreate(motionPlannerTask, "motionPlannerTask", 2048, NULL, 3, &motionPlannerHandle);
     Serial.println("All tasks created, starting scheduler...");
 
 
@@ -1214,3 +1350,8 @@ void calibrateMagnetometer2D(int duration) {
 
 }
 
+void setMotionPIDGains(){
+    motionController.setHeadingGain(motionGains.kp_heading);
+    motionController.setOmegaGains(motionGains.kp_omega, motionGains.ki_omega, motionGains.kd_omega);
+    motionController.setVelGains(motionGains.kp_vel, motionGains.ki_vel, motionGains.kd_vel);
+}

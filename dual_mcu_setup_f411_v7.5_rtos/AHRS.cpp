@@ -45,8 +45,11 @@ bool AHRS::begin() {
     delay(50); // Give time for power mode transition
 
     // Set Output Data Rates (ODR)
-    imu.setAccelRate(0x0B); // 800Hz - High rate for responsive correction
-    imu.setGyroRate(0x0B);  // 400Hz - Can be slightly lower than accelerometer
+    // imu.setAccelRate(0x0B); // 800Hz - High rate for responsive correction
+    // imu.setGyroRate(0x0B);  // 400Hz - Can be slightly lower than accelerometer
+
+    imu.setAccelRate(0x09); // 200Hz - High rate for responsive correction
+    imu.setGyroRate(0x09);  // 200Hz - Can be slightly lower than accelerometer
 
     // Check if gyro is in normal mode (required for temp sensor at 100Hz)
     // if (imu.isGyroInNormalMode()) {
@@ -113,7 +116,7 @@ bool AHRS::begin() {
 
     // ---- D. INITIALIZE GYROSCOPE OFFSET CORRECTION ----
     // This runs alongside the AHRS to auto-calibrate the gyro bias during operation.
-    FusionOffsetInitialise(&offsetFilter, 800); // Sample rate must match your gyro ODR (400Hz).
+    FusionOffsetInitialise(&offsetFilter, 200); // Sample rate must match your gyro ODR (400Hz).
 
     lastUpdateMicros = micros();
 

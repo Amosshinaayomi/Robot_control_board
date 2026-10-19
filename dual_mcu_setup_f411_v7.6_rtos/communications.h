@@ -32,9 +32,9 @@ void sendAck(uint8_t command, uint8_t status) {
     memcpy(&packet[idx], &ack, sizeof(ack_packet_t));
     idx += sizeof(ack_packet_t);
     uint8_t checksum = compute_checksum(packet, idx);
-    // Serial.printf("computed checksum for sent ack is %i\n", checksum);
+    Serial.printf("computed checksum for sent ack is %i\n", checksum);
     packet[idx++] = checksum;
-    // Serial.printf("Sending acknowledgement for packet 0X0%X, status %i\n", command, status);
+    Serial.printf("Sending acknowledgement for packet 0X0%X, status %i\n", command, status);
     commSerial.write(packet, idx);
 }
 

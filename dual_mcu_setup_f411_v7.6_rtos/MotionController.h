@@ -3,6 +3,9 @@
 #include "PID.h"
 #include <cmath>
 
+static inline float clampf(float v, float lo, float hi) {
+    return v < lo ? lo : (v > hi ? hi : v);
+}
 
 // Feedforward lookup table (voltage vs average speed) - from ground on both motors
 float getFeedforwardVoltage(float desiredSpeed_ticks) {
@@ -106,19 +109,30 @@ public:
         _straightMode = false;   // disable heading correction
     }
 
+    void setVelGains(float kp, float ki, float kd) {
+        _pidLeft.setGains(kp, ki, kd);
+        _pidRight.setGains(kp, ki, kd);
+    }
+
+    void setOmegaGains(float kp, float ki, float kd) {
+        _pidOmega.setGains(kp, ki, kd);
+    }
+
+    void setHeadingGain(float kp) {
+        KP_HEADING = kp;
+    }
     // Go straight at given speed (m/s), using current heading as reference
-    void setStraight(float speed, float headingAngle) {
+    void setStraight(float speed) {
         _targetV = speed;
         _targetOmega = 0.0f;
         _straightMode = true;
-        // _headingSetpointValid = false;
-        _headingSetpoint = headingAngle;
+        _headingSetpointValid = false;   // will capture on next update
     }
-    // Lock heading to this angle
-    // void setNewHeading(float yawAngle){
-    //     _headingSetpointValid = false;
-    //     _headingSetpoint = yawAngle;
-    // }
+    // Lock heading at this angle
+    void lockHeading(float yawAngle){
+        _headingSetpoint = yawAngle;
+        _headingSetpointValid = false;
+    }
     // Main control update, to be called at fixed interval (dt seconds)
     void update(float leftTicksAvg, float rightTicksAvg, float yaw, float yawRate_radps, float dt, float *motorsVoltage) {
         // 1. Compute wheel speeds (ticks/s)
@@ -159,12 +173,11 @@ public:
         // 2. Heading correction if in straight mode
         static float headingError = 0;
         if (_straightMode) {
-            // if (!_headingSetpointValid) {
-            //     _headingSetpoint = yaw;
-            //     _headingSetpointValid = true;
-            //     Serial.printf("heading is locked at %.3f, %.2f", _headingSetpoint, _headingSetpoint * RAD_TO_DEG); 
-            // }
-            Serial.printf("heading is locked at %.3f, %.2f", _headingSetpoint, _headingSetpoint * RAD_TO_DEG); 
+            if (!_headingSetpointValid) {
+                // _headingSetpoint = yaw;
+                _headingSetpointValid = true;
+                Serial.printf("heading is locked at %.3f, %.2f", _headingSetpoint, _headingSetpoint * RAD_TO_DEG); 
+            }
             headingError = yaw - _headingSetpoint;
             // Serial.printf("set point is %.5f\n", _headingSetpoint);
             // Normalize to [-π, π] (assuming yaw in radians)
@@ -206,14 +219,14 @@ public:
         float omegaCorrection = constrain((_pidOmega.compute(_targetOmega, quantised)),  -MAX_OMEGA_RADPS,  MAX_OMEGA_RADPS);
        
         static float prev_omega = 0;
-        const float MAX_SLEW_RATE = 2.5f;
+        const float MAX_SLEW_RATE = 2.5f; //radps
         float omega_cmd = omegaCorrection;
         float delta = omega_cmd - prev_omega;
         if (delta > MAX_SLEW_RATE) omega_cmd = prev_omega + MAX_SLEW_RATE;
         if (delta < -MAX_SLEW_RATE) omega_cmd = prev_omega - MAX_SLEW_RATE;
         
-        // prev_omega = omega_cmd;
-        // omegaCorrection = omega_cmd;
+        prev_omega = omega_cmd;
+        omegaCorrection = omega_cmd;
         // Serial.printf("omega correction is %.5f\n", omegaCorrection);
         // 3. Desired side speeds from kinematics (m/s)
         float leftDesired_mps = _targetV - omegaCorrection  * (ROBOT_TRACK_WIDTH / 2.0f);
@@ -258,11 +271,16 @@ public:
         float leftCmd;
         float rightCmd;
 
-        if(fabs(headingError) >= (DEG_TO_RAD * 8)){
+        if(fabs(headingError) >= (DEG_TO_RAD * 3)){
             leftCmd = leftFF + left_angular_ff;
             rightCmd = rightFF + right_angular_ff;   
             // Serial.println("using angular feedforward table");
-        } else {
+        } 
+        // else if(fabs(headingError) <= (DEG_TO_RAD * 2)){
+        //     leftCmd = leftPIDout;
+        //     rightCmd = rightPIDout;  
+        // }
+        else {
             leftCmd = leftFF + leftPIDout;
             rightCmd = rightFF + rightPIDout;   
             // Serial.println("using normal omega correction");         

@@ -23,16 +23,16 @@ const float ROBOT_TRACK_WIDTH = 0.13f;
 float CONTROL_DT = 0.05f; // set in motioncontrollertask
 
  // PID gains for velocity compensation
-const float KP_VEL = 0.11f;
-const float KI_VEL = 0.025f;
-const float KD_VEL = 0.0f;
+float KP_VEL = 0.11f;
+float KI_VEL = 0.025f;
+float KD_VEL = 0.0f;
 
-const float KP_HEADING = 3.5f;
+float KP_HEADING = 3.5f;
 
 // PID gains for gyrorate heading compensation
-const float KP_OMEGA = 1.6f; //started with 5 then 2, 2.7
-const float KI_OMEGA = 0.025f; // increase a bit later, started with 0.1
-const float KD_OMEGA = 0.00f;
+float KP_OMEGA = 1.6f; //started with 5 then 2, 2.7
+float KI_OMEGA = 0.025f; // increase a bit later, started with 0.1
+float KD_OMEGA = 0.00f;
 
 
  // PID gains for velocity compensation
